@@ -7,28 +7,35 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Upload, Image as ImageIcon } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface CoverImageModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentImage: string | null;
-  onSave: (imageUrl: string | null) => void;
+  audioFileId: string;
+  onSave: (file: File) => Promise<void>;
+  onRemove: () => void;
 }
 
 export const CoverImageModal = ({
   open,
   onOpenChange,
   currentImage,
+  audioFileId,
   onSave,
+  onRemove,
 }: CoverImageModalProps) => {
   const [preview, setPreview] = useState<string | null>(currentImage);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setSelectedFile(file);
       const reader = new FileReader();
       reader.onload = () => {
         setPreview(reader.result as string);
@@ -37,17 +44,40 @@ export const CoverImageModal = ({
     }
   };
 
-  const handleSave = () => {
-    onSave(preview);
-    onOpenChange(false);
+  const handleSave = async () => {
+    if (selectedFile) {
+      setIsUploading(true);
+      try {
+        await onSave(selectedFile);
+        onOpenChange(false);
+      } finally {
+        setIsUploading(false);
+      }
+    } else if (preview === null && currentImage !== null) {
+      // User removed the image
+      onRemove();
+      onOpenChange(false);
+    } else {
+      onOpenChange(false);
+    }
   };
 
   const handleRemove = () => {
     setPreview(null);
+    setSelectedFile(null);
+  };
+
+  // Reset state when modal opens
+  const handleOpenChange = (isOpen: boolean) => {
+    if (isOpen) {
+      setPreview(currentImage);
+      setSelectedFile(null);
+    }
+    onOpenChange(isOpen);
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Change Cover Image</DialogTitle>
@@ -93,10 +123,12 @@ export const CoverImageModal = ({
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSave}>Save</Button>
+          <Button onClick={handleSave} disabled={isUploading}>
+            {isUploading ? 'Uploading...' : 'Save'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

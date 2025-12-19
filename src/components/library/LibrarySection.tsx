@@ -7,7 +7,7 @@ import { VolumeModal } from './modals/VolumeModal';
 import { TrimModal } from './modals/TrimModal';
 import { DeleteConfirmModal } from './modals/DeleteConfirmModal';
 import { AudioFile } from '@/types/media';
-import { Music, Upload } from 'lucide-react';
+import { Music, Upload, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface LibrarySectionProps {
@@ -17,7 +17,7 @@ interface LibrarySectionProps {
 type ModalType = 'rename' | 'cover' | 'volume' | 'trim' | 'delete' | null;
 
 export const LibrarySection = ({ onNavigateToConvert }: LibrarySectionProps) => {
-  const { audioFiles, updateAudioFile, deleteAudioFile, downloadAudio } = useMedia();
+  const { audioFiles, updateAudioFile, deleteAudioFile, downloadAudio, uploadCoverImage, isBackendConnected } = useMedia();
   const [selectedFile, setSelectedFile] = useState<AudioFile | null>(null);
   const [activeModal, setActiveModal] = useState<ModalType>(null);
 
@@ -30,6 +30,22 @@ export const LibrarySection = ({ onNavigateToConvert }: LibrarySectionProps) => 
     setActiveModal(null);
     setSelectedFile(null);
   };
+
+  if (!isBackendConnected) {
+    return (
+      <div className="flex min-h-[400px] flex-col items-center justify-center gap-4 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
+          <AlertCircle className="h-8 w-8 text-destructive" />
+        </div>
+        <div className="space-y-2">
+          <h3 className="text-lg font-medium">Backend Not Connected</h3>
+          <p className="text-sm text-muted-foreground max-w-sm">
+            Make sure the backend server is running on port 3001
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (audioFiles.length === 0) {
     return (
@@ -91,9 +107,9 @@ export const LibrarySection = ({ onNavigateToConvert }: LibrarySectionProps) => 
             open={activeModal === 'cover'}
             onOpenChange={(open) => !open && closeModal()}
             currentImage={selectedFile.coverImage}
-            onSave={(coverImage) =>
-              updateAudioFile(selectedFile.id, { coverImage })
-            }
+            audioFileId={selectedFile.id}
+            onSave={(file) => uploadCoverImage(selectedFile.id, file)}
+            onRemove={() => updateAudioFile(selectedFile.id, { coverImage: null })}
           />
 
           <VolumeModal

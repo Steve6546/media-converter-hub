@@ -1,10 +1,10 @@
 import { DropZone } from './DropZone';
 import { ConversionProgress } from './ConversionProgress';
 import { useMedia } from '@/contexts/MediaContext';
-import { FileAudio, Zap } from 'lucide-react';
+import { FileAudio, Zap, AlertCircle } from 'lucide-react';
 
 export const ConvertSection = () => {
-  const { conversionJobs, startConversion } = useMedia();
+  const { conversionJobs, startConversion, isBackendConnected } = useMedia();
 
   const handleFilesDropped = (files: File[]) => {
     files.forEach((file) => {
@@ -15,6 +15,38 @@ export const ConvertSection = () => {
   const isConverting = conversionJobs.some(
     (job) => job.status === 'uploading' || job.status === 'converting'
   );
+
+  if (!isBackendConnected) {
+    return (
+      <div className="space-y-8">
+        <div className="space-y-2">
+          <h2 className="text-2xl font-semibold tracking-tight">
+            Convert Video to MP3
+          </h2>
+          <p className="text-muted-foreground">
+            Upload your video files and we'll extract high-quality audio in MP3 format.
+          </p>
+        </div>
+
+        <div className="flex min-h-[280px] flex-col items-center justify-center rounded-xl border-2 border-dashed border-destructive/50 bg-destructive/5">
+          <div className="flex flex-col items-center gap-4 p-8 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
+              <AlertCircle className="h-8 w-8 text-destructive" />
+            </div>
+            <div className="space-y-2">
+              <p className="text-lg font-medium">Backend Not Connected</p>
+              <p className="text-sm text-muted-foreground max-w-md">
+                The backend server is not running. Start it with:<br />
+                <code className="mt-2 inline-block rounded bg-muted px-2 py-1 font-mono text-xs">
+                  cd backend && npm install && npm run dev
+                </code>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
