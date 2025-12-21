@@ -1,9 +1,9 @@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Upload, Library } from 'lucide-react';
+import { Upload, Library, SlidersHorizontal } from 'lucide-react';
 
 interface TabNavigationProps {
-  activeTab: 'convert' | 'library';
-  onTabChange: (tab: 'convert' | 'library') => void;
+  activeTab: 'convert' | 'library' | 'studio';
+  onTabChange: (tab: 'convert' | 'library' | 'studio') => void;
   libraryCount: number;
 }
 
@@ -15,7 +15,7 @@ export const TabNavigation = ({
   return (
     <div className="border-b border-border bg-card">
       <div className="container px-4 md:px-6">
-        <Tabs value={activeTab} onValueChange={(v) => onTabChange(v as 'convert' | 'library')}>
+        <Tabs value={activeTab} onValueChange={(v) => onTabChange(v as 'convert' | 'library' | 'studio')}>
           <TabsList className="h-12 w-full justify-start gap-2 rounded-none border-none bg-transparent p-0">
             <TabsTrigger
               value="convert"
@@ -35,6 +35,13 @@ export const TabNavigation = ({
                   {libraryCount}
                 </span>
               )}
+            </TabsTrigger>
+            <TabsTrigger
+              value="studio"
+              className="relative h-12 rounded-none border-b-2 border-transparent px-4 pb-3 pt-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+            >
+              <SlidersHorizontal className="mr-2 h-4 w-4" />
+              Studio
             </TabsTrigger>
           </TabsList>
         </Tabs>

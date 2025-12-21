@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
+import WaveSurfer from 'wavesurfer.js';
 import { Play, Pause, Volume2 } from 'lucide-react';
-import { Slider } from '@/components/ui/slider';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -25,85 +25,125 @@ export const AudioPlayer = ({
   trimEnd,
   compact = false,
 }: AudioPlayerProps) => {
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const waveformRef = useRef<HTMLDivElement | null>(null);
+  const waveSurferRef = useRef<WaveSurfer | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
+    const container = waveformRef.current;
+    if (!container) return;
 
-    audio.volume = volume / 100;
-  }, [volume]);
+    const waveSurfer = WaveSurfer.create({
+      container,
+      waveColor: '#CBD5F5',
+      progressColor: '#6366F1',
+      cursorColor: 'transparent',
+      height: compact ? 36 : 48,
+      barWidth: compact ? 2 : 3,
+      barGap: compact ? 2 : 3,
+      barRadius: 2,
+      normalize: true,
+    });
 
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
+    waveSurferRef.current = waveSurfer;
+    waveSurfer.load(audioUrl);
 
-    const handleTimeUpdate = () => {
-      setCurrentTime(audio.currentTime);
-      
-      // Stop at trim end
-      if (audio.currentTime >= trimEnd) {
-        audio.pause();
-        audio.currentTime = trimStart;
+    const handleReady = () => {
+      const total = waveSurfer.getDuration();
+      setDuration(total);
+      waveSurfer.setVolume(volume / 100);
+      waveSurfer.setTime(trimStart);
+    };
+
+    const handleAudioProcess = () => {
+      const time = waveSurfer.getCurrentTime();
+      setCurrentTime(time);
+      if (trimEnd > trimStart && time >= trimEnd) {
+        waveSurfer.pause();
+        waveSurfer.setTime(trimStart);
         setIsPlaying(false);
       }
     };
 
-    const handleLoadedMetadata = () => {
-      setDuration(audio.duration);
-    };
-
-    const handleEnded = () => {
+    const handleFinish = () => {
       setIsPlaying(false);
-      audio.currentTime = trimStart;
+      waveSurfer.setTime(trimStart);
     };
 
-    audio.addEventListener('timeupdate', handleTimeUpdate);
-    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
-    audio.addEventListener('ended', handleEnded);
+    waveSurfer.on('ready', handleReady);
+    waveSurfer.on('audioprocess', handleAudioProcess);
+    waveSurfer.on('finish', handleFinish);
 
     return () => {
-      audio.removeEventListener('timeupdate', handleTimeUpdate);
-      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      audio.removeEventListener('ended', handleEnded);
+      waveSurfer.destroy();
+      waveSurferRef.current = null;
     };
+  }, [audioUrl, compact, trimEnd, trimStart]);
+
+  useEffect(() => {
+    const waveSurfer = waveSurferRef.current;
+    if (!waveSurfer) return;
+
+    waveSurfer.setVolume(volume / 100);
+  }, [volume]);
+
+  useEffect(() => {
+    const waveSurfer = waveSurferRef.current;
+    if (!waveSurfer) return;
+
+    const time = waveSurfer.getCurrentTime();
+    if (time < trimStart || time > trimEnd) {
+      waveSurfer.setTime(trimStart);
+      setCurrentTime(trimStart);
+    }
   }, [trimStart, trimEnd]);
 
+  useEffect(() => {
+    const waveSurfer = waveSurferRef.current;
+    if (!waveSurfer) return;
+
+    if (!isPlaying) {
+      waveSurfer.pause();
+    }
+  }, [isPlaying]);
+
   const togglePlay = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
+    const waveSurfer = waveSurferRef.current;
+    if (!waveSurfer) return;
 
     if (isPlaying) {
-      audio.pause();
-    } else {
-      if (audio.currentTime < trimStart || audio.currentTime >= trimEnd) {
-        audio.currentTime = trimStart;
-      }
-      audio.play();
+      waveSurfer.pause();
+      setIsPlaying(false);
+      return;
     }
-    setIsPlaying(!isPlaying);
+
+    const time = waveSurfer.getCurrentTime();
+    if (time < trimStart || time >= trimEnd) {
+      waveSurfer.setTime(trimStart);
+    }
+    waveSurfer.play();
+    setIsPlaying(true);
   };
 
-  const handleSeek = (value: number[]) => {
-    const audio = audioRef.current;
-    if (!audio) return;
+  const adjustedDuration = trimEnd - trimStart;
+  const safeDuration = duration > 0 ? duration : adjustedDuration;
+  const progress =
+    safeDuration > 0
+      ? ((currentTime - trimStart) / (trimEnd - trimStart || 1)) * 100
+      : 0;
 
-    const newTime = (value[0] / 100) * (trimEnd - trimStart) + trimStart;
-    audio.currentTime = newTime;
-    setCurrentTime(newTime);
-  };
-
-  const progress = duration > 0 
-    ? ((currentTime - trimStart) / (trimEnd - trimStart)) * 100 
-    : 0;
+  const trimOverlay =
+    safeDuration > 0
+      ? {
+          left: `${(trimStart / safeDuration) * 100}%`,
+          width: `${((trimEnd - trimStart) / safeDuration) * 100}%`,
+        }
+      : { left: '0%', width: '100%' };
 
   return (
     <div className={cn('flex items-center gap-3', compact ? 'gap-2' : 'gap-3')}>
-      <audio ref={audioRef} src={audioUrl} preload="metadata" />
-
       <Button
         variant="outline"
         size="icon"
@@ -124,15 +164,19 @@ export const AudioPlayer = ({
         <span className="text-xs text-muted-foreground w-10 text-right">
           {formatTime(currentTime)}
         </span>
-        <Slider
-          value={[Math.max(0, Math.min(100, progress))]}
-          max={100}
-          step={0.1}
-          onValueChange={handleSeek}
-          className="flex-1"
-        />
+        <div className={cn('relative flex-1', compact ? 'h-9' : 'h-11')}>
+          <div
+            className="absolute inset-y-0 rounded-sm bg-primary/10"
+            style={trimOverlay}
+          />
+          <div ref={waveformRef} className="h-full" />
+          <div
+            className="pointer-events-none absolute inset-y-0 left-0 bg-primary/20"
+            style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+          />
+        </div>
         <span className="text-xs text-muted-foreground w-10">
-          {formatTime(trimEnd - trimStart)}
+          {formatTime(adjustedDuration)}
         </span>
       </div>
 

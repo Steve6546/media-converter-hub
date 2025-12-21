@@ -1,37 +1,44 @@
 import { useCallback, useState } from 'react';
 import { Upload, FileVideo, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { SUPPORTED_FORMATS } from '@/types/media';
 
-interface DropZoneProps {
-  onFilesDropped: (files: File[]) => void;
+interface StudioDropZoneProps {
+  onFileSelected: (file: File) => void;
   disabled?: boolean;
 }
 
-export const DropZone = ({ onFilesDropped, disabled }: DropZoneProps) => {
+const ACCEPTED_EXTENSIONS = [
+  '.mp4',
+  '.mov',
+  '.mkv',
+  '.avi',
+  '.webm',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.avif',
+];
+
+const FORMAT_LABELS = ['MP4', 'MOV', 'MKV', 'AVI', 'WEBM', 'JPG', 'PNG', 'WEBP', 'AVIF'];
+
+export const StudioDropZone = ({ onFileSelected, disabled }: StudioDropZoneProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const validExtensions = Object.keys(SUPPORTED_FORMATS);
-  const formatLabels = validExtensions.map((ext) => ext.replace('.', '').toUpperCase());
-  const maxFileSizeMb = 500;
-  const maxFileSizeBytes = maxFileSizeMb * 1024 * 1024;
 
   const validateFile = (file: File): boolean => {
     const extension = '.' + file.name.split('.').pop()?.toLowerCase();
-    
-    if (!validExtensions.includes(extension)) {
-      setError(
-        `Unsupported format: ${extension}. Please use ${formatLabels.join(', ')}.`
-      );
+
+    if (!ACCEPTED_EXTENSIONS.includes(extension)) {
+      setError(`Unsupported format: ${extension}. Please use MP4, MOV, MKV, AVI, WEBM, JPG, PNG, WEBP, or AVIF.`);
       return false;
     }
-    
-    // Max 500MB file size
-    if (file.size > maxFileSizeBytes) {
-      setError(`File is too large. Maximum size is ${maxFileSizeMb}MB.`);
+
+    if (file.size > 2 * 1024 * 1024 * 1024) {
+      setError('File is too large. Maximum size is 2GB.');
       return false;
     }
-    
+
     return true;
   };
 
@@ -47,10 +54,10 @@ export const DropZone = ({ onFilesDropped, disabled }: DropZoneProps) => {
       const validFiles = files.filter(validateFile);
 
       if (validFiles.length > 0) {
-        onFilesDropped(validFiles);
+        onFileSelected(validFiles[0]);
       }
     },
-    [onFilesDropped, disabled]
+    [disabled, onFileSelected]
   );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -70,13 +77,12 @@ export const DropZone = ({ onFilesDropped, disabled }: DropZoneProps) => {
       const validFiles = files.filter(validateFile);
 
       if (validFiles.length > 0) {
-        onFilesDropped(validFiles);
+        onFileSelected(validFiles[0]);
       }
 
-      // Reset input
       e.target.value = '';
     },
-    [onFilesDropped]
+    [onFileSelected]
   );
 
   return (
@@ -86,7 +92,7 @@ export const DropZone = ({ onFilesDropped, disabled }: DropZoneProps) => {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         className={cn(
-          'relative flex min-h-[280px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed transition-all duration-200',
+          'relative flex min-h-[260px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed transition-all duration-200',
           isDragging
             ? 'border-primary bg-primary/5'
             : 'border-border hover:border-primary/50 hover:bg-muted/50',
@@ -95,8 +101,7 @@ export const DropZone = ({ onFilesDropped, disabled }: DropZoneProps) => {
       >
         <input
           type="file"
-          accept={validExtensions.join(',')}
-          multiple
+          accept={ACCEPTED_EXTENSIONS.join(',')}
           onChange={handleFileInput}
           disabled={disabled}
           className="absolute inset-0 z-10 cursor-pointer opacity-0"
@@ -118,7 +123,7 @@ export const DropZone = ({ onFilesDropped, disabled }: DropZoneProps) => {
 
           <div className="space-y-2">
             <p className="text-lg font-medium">
-              {isDragging ? 'Drop your video here' : 'Drag & drop video files'}
+              {isDragging ? 'Drop your media here' : 'Drag & drop video or image files'}
             </p>
             <p className="text-sm text-muted-foreground">
               or click to browse from your computer
@@ -126,7 +131,7 @@ export const DropZone = ({ onFilesDropped, disabled }: DropZoneProps) => {
           </div>
 
           <div className="flex flex-wrap justify-center gap-2">
-            {formatLabels.map((format) => (
+            {FORMAT_LABELS.map((format) => (
               <span
                 key={format}
                 className="rounded-md bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground"
@@ -135,9 +140,6 @@ export const DropZone = ({ onFilesDropped, disabled }: DropZoneProps) => {
               </span>
             ))}
           </div>
-          <p className="text-xs text-muted-foreground">
-            Max file size: {maxFileSizeMb}MB
-          </p>
         </div>
       </div>
 

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, Rea
 import { AudioFile, ConversionJob } from '@/types/media';
 import { mediaApi, AudioFileResponse } from '@/services/mediaApi';
 import { toast } from 'sonner';
+import { createClientId } from '@/lib/id';
 
 interface MediaContextType {
   audioFiles: AudioFile[];
@@ -118,7 +119,7 @@ export const MediaProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, []);
 
   const startConversion = useCallback(async (file: File): Promise<void> => {
-    const jobId = crypto.randomUUID();
+    const jobId = createClientId();
 
     const job: ConversionJob = {
       id: jobId,
@@ -187,14 +188,15 @@ export const MediaProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
       );
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to start conversion';
       setConversionJobs((prev) =>
         prev.map((j) =>
           j.id === jobId
-            ? { ...j, status: 'error' as const, error: 'Failed to start conversion' }
+            ? { ...j, status: 'error' as const, error: message }
             : j
         )
       );
-      toast.error(`Failed to start conversion for ${file.name}`);
+      toast.error(`Failed to start conversion for ${file.name}: ${message}`);
     }
   }, [addAudioFile]);
 

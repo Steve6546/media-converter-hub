@@ -3,11 +3,13 @@ import { Header } from '@/components/layout/Header';
 import { TabNavigation } from '@/components/layout/TabNavigation';
 import { ConvertSection } from '@/components/convert/ConvertSection';
 import { LibrarySection } from '@/components/library/LibrarySection';
+import { StudioSection } from '@/components/studio/StudioSection';
 import { MediaProvider, useMedia } from '@/contexts/MediaContext';
+import { StudioProvider } from '@/contexts/StudioContext';
 import { Helmet } from 'react-helmet-async';
 
 const DashboardContent = () => {
-  const [activeTab, setActiveTab] = useState<'convert' | 'library'>('convert');
+  const [activeTab, setActiveTab] = useState<'convert' | 'library' | 'studio'>('convert');
   const { audioFiles } = useMedia();
 
   return (
@@ -30,11 +32,11 @@ const DashboardContent = () => {
 
         <main className="flex-1">
           <div className="container py-8 px-4 md:px-6">
-            {activeTab === 'convert' ? (
-              <ConvertSection />
-            ) : (
+            {activeTab === 'convert' && <ConvertSection />}
+            {activeTab === 'library' && (
               <LibrarySection onNavigateToConvert={() => setActiveTab('convert')} />
             )}
+            {activeTab === 'studio' && <StudioSection />}
           </div>
         </main>
 
@@ -53,7 +55,9 @@ const DashboardContent = () => {
 const Index = () => {
   return (
     <MediaProvider>
-      <DashboardContent />
+      <StudioProvider>
+        <DashboardContent />
+      </StudioProvider>
     </MediaProvider>
   );
 };

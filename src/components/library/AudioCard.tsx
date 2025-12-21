@@ -3,6 +3,12 @@ import { AudioFile } from '@/types/media';
 import { AudioPlayer } from './AudioPlayer';
 import { Button } from '@/components/ui/button';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -20,6 +26,7 @@ import {
   Music,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
 
 interface AudioCardProps {
   audioFile: AudioFile;
@@ -46,6 +53,24 @@ export const AudioCard = ({
   onDownload,
   onDelete,
 }: AudioCardProps) => {
+  const isTrimmed = audioFile.trimStart > 0 || audioFile.trimEnd < audioFile.duration;
+  const volumeDelta = audioFile.volume - 100;
+  const isVolumeChanged = volumeDelta !== 0;
+  const newDuration = audioFile.trimEnd - audioFile.trimStart;
+
+  const tooltipParts = [
+    isTrimmed ? 'Trimmed' : null,
+    isVolumeChanged ? `Volume ${volumeDelta >= 0 ? '+' : ''}${volumeDelta}%` : null,
+  ].filter(Boolean);
+
+  const durationText = isTrimmed
+    ? `Original ${formatDuration(audioFile.duration)} -> New ${formatDuration(newDuration)}`
+    : `Original ${formatDuration(audioFile.duration)}`;
+
+  const tooltipText = tooltipParts.length
+    ? `${tooltipParts.join(' - ')} - ${durationText}`
+    : durationText;
+
   return (
     <div className="group overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md">
       {/* Cover Image */}
@@ -127,13 +152,39 @@ export const AudioCard = ({
         </div>
 
         {/* Audio Player */}
-        <AudioPlayer
-          audioUrl={audioFile.audioUrl}
-          volume={audioFile.volume}
-          trimStart={audioFile.trimStart}
-          trimEnd={audioFile.trimEnd}
-          compact
-        />
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="relative">
+                <AudioPlayer
+                  audioUrl={audioFile.audioUrl}
+                  volume={audioFile.volume}
+                  trimStart={audioFile.trimStart}
+                  trimEnd={audioFile.trimEnd}
+                  compact
+                />
+                {(isTrimmed || isVolumeChanged) && (
+                  <div className="absolute right-0 top-0 flex items-center gap-1">
+                    {isTrimmed && (
+                      <span
+                        className={cn(
+                          'h-2 w-2 rounded-full bg-amber-500',
+                          isVolumeChanged && 'opacity-90'
+                        )}
+                      />
+                    )}
+                    {isVolumeChanged && (
+                      <span className="h-2 w-2 rounded-full bg-sky-500" />
+                    )}
+                  </div>
+                )}
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{tooltipText}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
     </div>
   );

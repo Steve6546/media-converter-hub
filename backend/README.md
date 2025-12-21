@@ -5,9 +5,12 @@ Node.js + Express backend with FFmpeg for video-to-MP3 conversion and audio edit
 ## Requirements
 
 - Node.js 18+
-- FFmpeg installed and available in PATH
+- Redis (BullMQ queue)
+- FFmpeg (provided via `ffmpeg-static`, or system install on PATH)
 
-### Installing FFmpeg
+### Installing FFmpeg (Optional)
+
+The backend now uses `ffmpeg-static` and `ffprobe-static` by default. If you prefer a system install, follow:
 
 **macOS:**
 ```bash
@@ -35,6 +38,11 @@ npm install
 **Development:**
 ```bash
 npm run dev
+```
+
+**Worker (required for studio jobs):**
+```bash
+npm run dev:worker
 ```
 
 **Production:**
@@ -118,11 +126,165 @@ DELETE /api/audio/:id
 GET /api/health
 ```
 
+## Studio / Optimizer API
+
+### Create Studio Job
+```
+POST /api/studio/jobs
+Content-Type: multipart/form-data
+
+Fields:
+  tool: compress | enhance | thumbnails | subtitles | image
+  options: JSON string
+  file: video or image file
+  subtitle: optional .srt or .vtt file
+
+Response: { jobId }
+```
+
+### Studio Job Status
+```
+GET /api/studio/jobs/:jobId
+```
+
+### Studio Job Progress (SSE)
+```
+GET /api/studio/jobs/:jobId/stream
+```
+
+## Studio Job Schemas
+Reference schemas are defined in `backend/src/studio/schemas.js`.
+
+### Compress
+```json
+{
+  "tool": "compress",
+  "input": {
+    "path": "string",
+    "originalName": "string",
+    "mimeType": "string",
+    "size": 0
+  },
+  "options": {
+    "resolution": "1080p | 720p | 480p",
+    "fps": 60,
+    "bitrateMode": "auto | manual",
+    "bitrateKbps": 2500,
+    "codec": "h264 | h265",
+    "audioMode": "keep | remove | compress-128 | compress-96",
+    "targetSizeMb": 1,
+    "brand": {
+      "watermark": false,
+      "watermarkPosition": "bottom-right",
+      "watermarkOpacity": 40,
+      "intro": false,
+      "outro": false,
+      "frameBorder": false,
+      "platformPreset": "youtube"
+    }
+  }
+}
+```
+
+### Enhance
+```json
+{
+  "tool": "enhance",
+  "input": {
+    "path": "string",
+    "originalName": "string",
+    "mimeType": "string",
+    "size": 0
+  },
+  "options": {
+    "stabilization": false,
+    "denoise": true,
+    "sharpen": true,
+    "normalizeAudio": true,
+    "loudnessTarget": -14
+  }
+}
+```
+
+### Thumbnails
+```json
+{
+  "tool": "thumbnails",
+  "input": {
+    "path": "string",
+    "originalName": "string",
+    "mimeType": "string",
+    "size": 0
+  },
+  "options": {
+    "autoExtract": true,
+    "enableCrop": true,
+    "addText": false,
+    "addLogo": false,
+    "exportFormat": "png",
+    "youtubeSafe": true
+  }
+}
+```
+
+### Subtitles
+```json
+{
+  "tool": "subtitles",
+  "input": {
+    "path": "string",
+    "originalName": "string",
+    "mimeType": "string",
+    "size": 0
+  },
+  "assets": {
+    "subtitle": {
+      "path": "string",
+      "originalName": "string",
+      "mimeType": "string",
+      "size": 0
+    }
+  },
+  "options": {
+    "burnIn": true,
+    "exportFormats": ["srt", "vtt"],
+    "speechToText": false,
+    "translate": false
+  }
+}
+```
+
+### Image
+```json
+{
+  "tool": "image",
+  "input": {
+    "path": "string",
+    "originalName": "string",
+    "mimeType": "string",
+    "size": 0
+  },
+  "options": {
+    "format": "webp",
+    "backgroundRemoval": false,
+    "smartResize": true,
+    "upscale": false,
+    "faceBlur": false,
+    "removeExif": true
+  }
+}
+```
+
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | PORT | 3001 | Server port |
+| REDIS_URL | - | Redis connection string |
+| REDIS_HOST | 127.0.0.1 | Redis host |
+| REDIS_PORT | 6379 | Redis port |
+| FFMPEG_PATH | - | Path to ffmpeg binary if not in PATH |
+| FFPROBE_PATH | - | Path to ffprobe binary if not in PATH |
 
 ## File Storage
 

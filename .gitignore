@@ -11,6 +11,12 @@ node_modules
 dist
 dist-ssr
 *.local
+backend/uploads/
+backend/output/
+backend/covers/
+backend/studio-uploads/
+backend/studio-output/
+backend/studio-temp/
 
 # Editor directories and files
 .vscode/*
