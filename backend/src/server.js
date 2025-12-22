@@ -262,7 +262,7 @@ app.post('/api/convert', uploadVideo.single('video'), async (req, res) => {
         });
 
         // Clean up input file
-        fs.unlink(inputPath, () => {});
+        fs.unlink(inputPath, () => { });
       })
       .on('error', (err) => {
         console.error(`❌ [${conversionId}] FFmpeg error: ${err.message}`);
@@ -271,13 +271,13 @@ app.post('/api/convert', uploadVideo.single('video'), async (req, res) => {
           status: 'error',
           error: err.message
         });
-        fs.unlink(inputPath, () => {});
+        fs.unlink(inputPath, () => { });
       })
       .run();
 
   } catch (err) {
     console.error(`❌ [/api/convert] Exception: ${err.message}`);
-    fs.unlink(inputPath, () => {});
+    fs.unlink(inputPath, () => { });
     return res
       .status(500)
       .json({ error: err && err.message ? err.message : 'Failed to start conversion' });
@@ -367,7 +367,7 @@ app.post('/api/audio/:id/cover', uploadCover.single('cover'), (req, res) => {
   // Delete old cover if exists
   if (audioFile.coverImage && audioFile.coverImage.startsWith('/covers/')) {
     const oldCoverPath = path.join(__dirname, '..', audioFile.coverImage);
-    fs.unlink(oldCoverPath, () => {});
+    fs.unlink(oldCoverPath, () => { });
   }
 
   audioFile.coverImage = `/covers/${req.file.filename}`;
@@ -384,13 +384,13 @@ app.delete('/api/audio/:id', (req, res) => {
 
   // Delete audio file
   if (audioFile.audioPath) {
-    fs.unlink(audioFile.audioPath, () => {});
+    fs.unlink(audioFile.audioPath, () => { });
   }
 
   // Delete cover if exists
   if (audioFile.coverImage && audioFile.coverImage.startsWith('/covers/')) {
     const coverPath = path.join(__dirname, '..', audioFile.coverImage);
-    fs.unlink(coverPath, () => {});
+    fs.unlink(coverPath, () => { });
   }
 
   audioFilesStore.delete(audioFile.id);
@@ -404,9 +404,9 @@ app.get('/api/audio/:id/download', async (req, res) => {
     return res.status(404).json({ error: 'Audio file not found' });
   }
 
-  const needsProcessing = audioFile.volume !== 100 || 
-                          audioFile.trimStart > 0 || 
-                          audioFile.trimEnd < audioFile.duration;
+  const needsProcessing = audioFile.volume !== 100 ||
+    audioFile.trimStart > 0 ||
+    audioFile.trimEnd < audioFile.duration;
 
   if (!needsProcessing) {
     // No processing needed, send original file
@@ -435,10 +435,10 @@ app.get('/api/audio/:id/download', async (req, res) => {
 
     res.download(tempOutputPath, `${audioFile.name}.mp3`, (err) => {
       // Clean up temp file after download
-      fs.unlink(tempOutputPath, () => {});
+      fs.unlink(tempOutputPath, () => { });
     });
   } catch (err) {
-    fs.unlink(tempOutputPath, () => {});
+    fs.unlink(tempOutputPath, () => { });
     res.status(500).json({ error: 'Failed to process audio' });
   }
 });
@@ -455,9 +455,9 @@ app.post('/api/audio/:id/apply-edits', async (req, res) => {
   const newTrimStart = trimStart !== undefined ? trimStart : audioFile.trimStart;
   const newTrimEnd = trimEnd !== undefined ? trimEnd : audioFile.trimEnd;
 
-  const needsProcessing = newVolume !== 100 || 
-                          newTrimStart > 0 || 
-                          newTrimEnd < audioFile.duration;
+  const needsProcessing = newVolume !== 100 ||
+    newTrimStart > 0 ||
+    newTrimEnd < audioFile.duration;
 
   if (!needsProcessing) {
     return res.json(audioFile);
@@ -500,7 +500,7 @@ app.post('/api/audio/:id/apply-edits', async (req, res) => {
     audioFilesStore.set(audioFile.id, audioFile);
     res.json(audioFile);
   } catch (err) {
-    fs.unlink(tempOutputPath, () => {});
+    fs.unlink(tempOutputPath, () => { });
     res.status(500).json({ error: 'Failed to apply edits' });
   }
 });

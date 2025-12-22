@@ -108,6 +108,7 @@ export const LibrarySection = ({ onNavigateToConvert }: LibrarySectionProps) => 
             onOpenChange={(open) => !open && closeModal()}
             currentImage={selectedFile.coverImage}
             audioFileId={selectedFile.id}
+            audioFileName={selectedFile.name}
             onSave={(file) => uploadCoverImage(selectedFile.id, file)}
             onRemove={() => updateAudioFile(selectedFile.id, { coverImage: null })}
           />

@@ -89,6 +89,42 @@ class StudioApiService {
       eventSource.close();
     };
   }
+
+  async probeVideo(file: File): Promise<{
+    duration: number;
+    fileSize: number;
+    totalBitrate: number;
+    video: {
+      width: number;
+      height: number;
+      fps: number;
+      codec: string;
+      bitrate: number;
+      profile: string | null;
+      pixelFormat: string | null;
+    };
+    audio: {
+      codec: string;
+      bitrate: number;
+      channels: number;
+      sampleRate: number;
+    };
+  }> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${this.baseUrl}/api/studio/probe`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to probe video');
+    }
+
+    return response.json();
+  }
 }
 
 export const studioApi = new StudioApiService(API_BASE_URL);

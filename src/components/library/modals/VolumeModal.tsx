@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
-import { Volume, Volume1, Volume2, VolumeX } from 'lucide-react';
+import { Mic2, Music, Mic, Volume, Volume1, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface VolumeModalProps {
@@ -22,6 +22,17 @@ interface VolumeModalProps {
   trimStart: number;
   trimEnd: number;
   onSave: (volume: number, normalize: boolean) => void;
+}
+
+interface Preset {
+  id: string;
+  label: string;
+  description: string;
+  volume: number;
+  normalize: boolean;
+  icon: typeof Mic2;
+  gradient: string;
+  activeGradient: string;
 }
 
 export const VolumeModal = ({
@@ -38,11 +49,13 @@ export const VolumeModal = ({
   const [normalize, setNormalize] = useState(currentNormalize);
   const [peak, setPeak] = useState<number | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [activePreset, setActivePreset] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setVolume(currentVolume);
     setNormalize(currentNormalize);
+    setActivePreset(null);
   }, [currentVolume, currentNormalize, open]);
 
   useEffect(() => {
@@ -100,17 +113,65 @@ export const VolumeModal = ({
     };
   }, [audioUrl, open, trimEnd, trimStart]);
 
-  const presets = useMemo(
+  const presets: Preset[] = useMemo(
     () => [
-      { id: 'podcast', label: 'Podcast', volume: 120, normalize: true },
-      { id: 'music', label: 'Music', volume: 100, normalize: false },
-      { id: 'voice', label: 'Voice note', volume: 140, normalize: true },
+      {
+        id: 'podcast',
+        label: 'Podcast',
+        description: 'Optimized for speech clarity',
+        volume: 120,
+        normalize: true,
+        icon: Mic2,
+        gradient: 'from-violet-500/20 to-purple-500/20',
+        activeGradient: 'from-violet-500/40 to-purple-500/40',
+      },
+      {
+        id: 'music',
+        label: 'Music',
+        description: 'Balanced for instruments',
+        volume: 100,
+        normalize: false,
+        icon: Music,
+        gradient: 'from-blue-500/20 to-cyan-500/20',
+        activeGradient: 'from-blue-500/40 to-cyan-500/40',
+      },
+      {
+        id: 'voice',
+        label: 'Voice Note',
+        description: 'Maximum voice presence',
+        volume: 140,
+        normalize: true,
+        icon: Mic,
+        gradient: 'from-amber-500/20 to-orange-500/20',
+        activeGradient: 'from-amber-500/40 to-orange-500/40',
+      },
     ],
     []
   );
 
   const estimatedPeak = peak !== null ? peak * (volume / 100) : null;
   const isClipping = estimatedPeak !== null && estimatedPeak > 1;
+  const peakPercentage = estimatedPeak !== null ? Math.min(150, estimatedPeak * 100) : 0;
+
+  // Calculate color zones for VU meter
+  const getBarColor = (level: number) => {
+    if (level > 100) return 'bg-red-500';
+    if (level > 80) return 'bg-yellow-500';
+    return 'bg-emerald-500';
+  };
+
+  const handlePresetClick = (preset: Preset) => {
+    setVolume(preset.volume);
+    setNormalize(preset.normalize);
+    setActivePreset(preset.id);
+  };
+
+  const handleVolumeChange = (newVolume: number) => {
+    setVolume(newVolume);
+    // Clear active preset when manually adjusting
+    const matchingPreset = presets.find(p => p.volume === newVolume && p.normalize === normalize);
+    setActivePreset(matchingPreset?.id || null);
+  };
 
   const handleSave = () => {
     onSave(volume, normalize);
@@ -121,126 +182,185 @@ export const VolumeModal = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Adjust Volume</DialogTitle>
+      <DialogContent className="sm:max-w-lg overflow-hidden">
+        {/* Studio Header */}
+        <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-primary/10 to-transparent pointer-events-none" />
+
+        <DialogHeader className="relative">
+          <DialogTitle className="text-xl">Mini Audio Studio</DialogTitle>
           <DialogDescription>
-            Shape loudness with presets and safe normalization.
+            Professional audio levels with one click
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-6 py-6">
-          <div className="flex items-center justify-center gap-4">
-            <VolumeIcon className="h-8 w-8 text-muted-foreground" />
-            <span className="text-4xl font-bold">{volume}%</span>
-          </div>
 
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Presets</p>
-            <div className="flex flex-wrap gap-2">
-              {presets.map((preset) => (
-                <Button
-                  key={preset.id}
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setVolume(preset.volume);
-                    setNormalize(preset.normalize);
-                  }}
-                >
-                  {preset.label}
-                </Button>
-              ))}
+        <div className="space-y-6 py-4 relative">
+          {/* Volume Display */}
+          <div className="flex items-center justify-center gap-4 py-2">
+            <div className="relative">
+              <div className="absolute inset-0 bg-primary/20 blur-xl rounded-full" />
+              <div className="relative flex items-center gap-3 bg-card/50 backdrop-blur-sm rounded-2xl px-6 py-3 border">
+                <VolumeIcon className="h-7 w-7 text-primary" />
+                <span className="text-4xl font-bold tabular-nums">{volume}%</span>
+              </div>
             </div>
           </div>
 
-          <div className="space-y-2">
+          {/* Presets */}
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-muted-foreground">Choose a preset</p>
+            <div className="grid grid-cols-3 gap-3">
+              {presets.map((preset) => {
+                const Icon = preset.icon;
+                const isActive = activePreset === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => handlePresetClick(preset)}
+                    className={cn(
+                      'group relative flex flex-col items-center gap-2 p-4 rounded-xl border transition-all duration-200',
+                      'hover:scale-[1.02] hover:shadow-lg',
+                      isActive
+                        ? `bg-gradient-to-br ${preset.activeGradient} border-primary/50 shadow-md`
+                        : `bg-gradient-to-br ${preset.gradient} border-border/50 hover:border-primary/30`
+                    )}
+                  >
+                    <div className={cn(
+                      'flex h-10 w-10 items-center justify-center rounded-full transition-colors',
+                      isActive ? 'bg-primary/20' : 'bg-background/50 group-hover:bg-primary/10'
+                    )}>
+                      <Icon className={cn(
+                        'h-5 w-5 transition-colors',
+                        isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-primary'
+                      )} />
+                    </div>
+                    <div className="text-center">
+                      <p className={cn(
+                        'text-sm font-medium',
+                        isActive ? 'text-foreground' : 'text-muted-foreground'
+                      )}>
+                        {preset.label}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                        {preset.description}
+                      </p>
+                    </div>
+                    {isActive && (
+                      <div className="absolute -top-1 -right-1 h-3 w-3 bg-primary rounded-full border-2 border-background" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Volume Slider */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">Fine-tune volume</p>
+              <span className="text-xs text-muted-foreground/70">{volume}%</span>
+            </div>
             <Slider
               value={[volume]}
-              onValueChange={(v) => setVolume(v[0])}
+              onValueChange={(v) => handleVolumeChange(v[0])}
               max={200}
               step={1}
               className="w-full"
             />
-            <div className="flex justify-between text-xs text-muted-foreground">
+            <div className="flex justify-between text-xs text-muted-foreground/50">
               <span>0%</span>
               <span>100%</span>
               <span>200%</span>
             </div>
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <div>
+          {/* Normalize Toggle */}
+          <div className="flex items-center justify-between rounded-xl border bg-card/30 p-4">
+            <div className="space-y-0.5">
               <p className="text-sm font-medium">Normalize (LUFS)</p>
               <p className="text-xs text-muted-foreground">Target -14 LUFS for consistent levels</p>
             </div>
-            <Switch checked={normalize} onCheckedChange={setNormalize} />
+            <Switch
+              checked={normalize}
+              onCheckedChange={(checked) => {
+                setNormalize(checked);
+                const matchingPreset = presets.find(p => p.volume === volume && p.normalize === checked);
+                setActivePreset(matchingPreset?.id || null);
+              }}
+            />
           </div>
 
-          <div className="rounded-lg border p-3">
+          {/* Peak Indicator - VU Meter Style */}
+          <div className="rounded-xl border bg-card/30 p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium">Peak Indicator</p>
-              <span
-                className={cn(
-                  'text-xs',
-                  isClipping ? 'text-destructive' : 'text-muted-foreground'
-                )}
-              >
+              <p className="text-sm font-medium">Peak Level</p>
+              <span className={cn(
+                'text-xs font-medium px-2 py-0.5 rounded-full transition-colors',
+                isAnalyzing
+                  ? 'bg-muted text-muted-foreground'
+                  : isClipping
+                    ? 'bg-red-500/20 text-red-500 animate-pulse'
+                    : estimatedPeak !== null && estimatedPeak > 0.8
+                      ? 'bg-yellow-500/20 text-yellow-600'
+                      : 'bg-emerald-500/20 text-emerald-600'
+              )}>
                 {isAnalyzing
                   ? 'Analyzing...'
                   : estimatedPeak === null
                     ? 'Unavailable'
                     : isClipping
-                      ? 'Clipping risk'
-                      : 'Safe'}
+                      ? '⚠ CLIPPING'
+                      : estimatedPeak > 0.8
+                        ? 'High'
+                        : 'Safe'}
               </span>
             </div>
-            <div className="mt-2 h-2 w-full rounded-full bg-muted">
-              <div
-                className={cn(
-                  'h-2 rounded-full transition-colors',
-                  isClipping ? 'bg-destructive' : 'bg-emerald-500'
-                )}
-                style={{
-                  width: `${Math.min(100, Math.max(5, (estimatedPeak || 0) * 100))}%`,
-                }}
-              />
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {estimatedPeak !== null
-                ? `Estimated peak ${(estimatedPeak * 100).toFixed(0)}% after gain`
-                : 'Peak estimation uses a quick client-side scan.'}
-            </p>
-          </div>
 
-          <div className="flex justify-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setVolume(50)}
-            >
-              50%
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setVolume(100)}
-            >
-              100%
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setVolume(150)}
-            >
-              150%
-            </Button>
+            {/* VU Meter Segments */}
+            <div className="flex gap-0.5 h-6 items-end">
+              {Array.from({ length: 30 }).map((_, i) => {
+                const segmentLevel = (i + 1) * (150 / 30);
+                const isActive = peakPercentage >= segmentLevel;
+                const segmentColor = i >= 26 ? 'bg-red-500' : i >= 20 ? 'bg-yellow-500' : 'bg-emerald-500';
+
+                return (
+                  <div
+                    key={i}
+                    className={cn(
+                      'flex-1 rounded-sm transition-all duration-75',
+                      isActive ? segmentColor : 'bg-muted/30',
+                      isActive && i >= 26 && 'animate-pulse'
+                    )}
+                    style={{ height: `${60 + (i * 1.3)}%` }}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Scale markers */}
+            <div className="flex justify-between text-[10px] text-muted-foreground/50 px-0.5">
+              <span>0</span>
+              <span>50%</span>
+              <span>100%</span>
+              <span className="text-red-400/50">150%</span>
+            </div>
+
+            {/* Warning message */}
+            {isClipping && (
+              <div className="flex items-center gap-2 text-xs text-red-500 bg-red-500/10 rounded-lg p-2">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                <span>Reduce volume to prevent audio distortion</span>
+              </div>
+            )}
           </div>
         </div>
+
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSave}>Apply</Button>
+          <Button onClick={handleSave} className="min-w-[100px]">
+            Apply
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

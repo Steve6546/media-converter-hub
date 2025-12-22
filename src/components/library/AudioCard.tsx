@@ -1,7 +1,7 @@
 import { AudioFile } from '@/types/media';
 import { AudioPlayer } from './AudioPlayer';
+import { AudioInsights } from './AudioInsights';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
   TooltipContent,
@@ -207,6 +207,16 @@ export const AudioCard = ({
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
+
+        {/* Audio Intelligence Insights */}
+        <AudioInsights
+          audioUrl={audioFile.audioUrl}
+          duration={audioFile.duration}
+          trimStart={audioFile.trimStart}
+          trimEnd={audioFile.trimEnd}
+          onSuggestTrim={onTrim}
+          onSuggestVolume={onAdjustVolume}
+        />
       </div>
     </div>
   );

@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { useMedia } from '@/contexts/MediaContext';
 import { useStudio } from '@/contexts/StudioContext';
 import { StudioDropZone } from './StudioDropZone';
 import { StudioJobProgress } from './StudioJobProgress';
 import { ImagePreviewPanel } from './ImagePreviewPanel';
+import { RealCompressionPanel } from './RealCompressionPanel';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -268,6 +269,25 @@ export const StudioSection = () => {
     setSubtitleFile(null);
   };
 
+  // Real compression settings from RealCompressionPanel
+  const [realCompressionSettings, setRealCompressionSettings] = useState<{
+    targetHeight: number;
+    fps: number;
+    codec: 'h264' | 'h265' | 'av1';
+    audioBitrate: number;
+    estimatedSize: number;
+  } | null>(null);
+
+  const handleCompressionSettingsChange = useCallback((settings: {
+    targetHeight: number;
+    fps: number;
+    codec: 'h264' | 'h265' | 'av1';
+    audioBitrate: number;
+    estimatedSize: number;
+  }) => {
+    setRealCompressionSettings(settings);
+  }, []);
+
   const applyPreset = (preset: VideoPreset, overrides: Partial<VideoSettings> = {}) => {
     setVideoPreset(preset);
     setVideoSettings((prev) => {
@@ -400,192 +420,12 @@ export const StudioSection = () => {
 
           {assetType === 'video' && (
             <>
-              <Drawer>
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">Video Size Reducer (Smart Compression)</CardTitle>
-                    <CardDescription>
-                      Pick a preset or fine-tune with advanced controls for optimal file size.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid gap-3 md:grid-cols-3">
-                      {(['tiny', 'balanced', 'high'] as VideoPreset[]).map((preset) => (
-                        <PresetCard
-                          key={preset}
-                          preset={preset}
-                          isActive={videoPreset === preset}
-                          onSelect={applyPreset}
-                        />
-                      ))}
-                    </div>
-                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-                      <span>
-                        {videoSettings.resolution} | {videoSettings.fps} fps | {videoSettings.codec.toUpperCase()}
-                      </span>
-                      <span>Target {videoSettings.targetSizeMb} MB</span>
-                    </div>
-                  </CardContent>
-                  <CardFooter className="flex flex-wrap items-center gap-3">
-                    <Button onClick={handleSmartCompress}>
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      Smart Compress
-                    </Button>
-                    <DrawerTrigger asChild>
-                      <Button variant="outline">
-                        <SlidersHorizontal className="mr-2 h-4 w-4" />
-                        Advanced Options
-                      </Button>
-                    </DrawerTrigger>
-                  </CardFooter>
-                </Card>
-
-                <DrawerContent>
-                  <div className="mx-auto w-full max-w-3xl">
-                    <DrawerHeader>
-                      <DrawerTitle>Advanced Compression Settings</DrawerTitle>
-                      <DrawerDescription>
-                        Adjust resolution, fps, codec, audio, and size targets.
-                      </DrawerDescription>
-                    </DrawerHeader>
-                    <div className="space-y-6 p-4 pt-0">
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label>Resolution</Label>
-                          <Select
-                            value={videoSettings.resolution}
-                            onValueChange={(value) =>
-                              updateVideoSettings({ resolution: value as VideoResolution })
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select resolution" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="1080p">1080p</SelectItem>
-                              <SelectItem value="720p">720p</SelectItem>
-                              <SelectItem value="480p">480p</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label>FPS</Label>
-                          <Select
-                            value={videoSettings.fps}
-                            onValueChange={(value) => updateVideoSettings({ fps: value as VideoFps })}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select FPS" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="60">60</SelectItem>
-                              <SelectItem value="30">30</SelectItem>
-                              <SelectItem value="24">24</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label>Codec</Label>
-                          <Select
-                            value={videoSettings.codec}
-                            onValueChange={(value) => updateVideoSettings({ codec: value as VideoCodec })}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select codec" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="h264">H.264</SelectItem>
-                              <SelectItem value="h265">H.265 (HEVC)</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label>Target Size (MB)</Label>
-                          <Input
-                            type="number"
-                            min={1}
-                            max={100}
-                            value={videoSettings.targetSizeMb}
-                            onChange={(event) =>
-                              updateVideoSettings({
-                                targetSizeMb: Math.min(100, Math.max(1, Number(event.target.value))),
-                              })
-                            }
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        <Label>Bitrate</Label>
-                        <RadioGroup
-                          value={videoSettings.bitrateMode}
-                          onValueChange={(value) =>
-                            updateVideoSettings({ bitrateMode: value as BitrateMode })
-                          }
-                          className="grid gap-2 sm:grid-cols-2"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem id="bitrate-auto" value="auto" />
-                            <Label htmlFor="bitrate-auto">Auto</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem id="bitrate-manual" value="manual" />
-                            <Label htmlFor="bitrate-manual">Manual</Label>
-                          </div>
-                        </RadioGroup>
-                        <div className="space-y-2">
-                          <Label>Manual Bitrate (kbps)</Label>
-                          <Input
-                            type="number"
-                            min={200}
-                            value={videoSettings.bitrateKbps}
-                            onChange={(event) =>
-                              updateVideoSettings({ bitrateKbps: Number(event.target.value) })
-                            }
-                            disabled={videoSettings.bitrateMode !== 'manual'}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        <Label>Audio</Label>
-                        <RadioGroup
-                          value={videoSettings.audioMode}
-                          onValueChange={(value) =>
-                            updateVideoSettings({ audioMode: value as AudioMode })
-                          }
-                          className="grid gap-2 sm:grid-cols-2"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem id="audio-keep" value="keep" />
-                            <Label htmlFor="audio-keep">Keep</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem id="audio-remove" value="remove" />
-                            <Label htmlFor="audio-remove">Remove</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem id="audio-128" value="compress-128" />
-                            <Label htmlFor="audio-128">Compress 128k</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem id="audio-96" value="compress-96" />
-                            <Label htmlFor="audio-96">Compress 96k</Label>
-                          </div>
-                        </RadioGroup>
-                      </div>
-                    </div>
-                    <DrawerFooter>
-                      <DrawerClose asChild>
-                        <Button>Done</Button>
-                      </DrawerClose>
-                    </DrawerFooter>
-                  </div>
-                </DrawerContent>
-              </Drawer>
+              {/* Real Compression Panel - replaces old preset cards */}
+              <RealCompressionPanel
+                file={selectedFile}
+                onSettingsChange={handleCompressionSettingsChange}
+                onStartCompress={handleQueueJob}
+              />
 
               <Card>
                 <CardHeader>
@@ -1150,7 +990,8 @@ export const StudioSection = () => {
             ))}
           </CardContent>
         </Card>
-      )}
-    </div>
+      )
+      }
+    </div >
   );
 };
