@@ -3,6 +3,15 @@
  * Calculates realistic output file sizes based on actual bitrate formulas
  */
 
+export interface HDRInfo {
+    detected: boolean;
+    type: string | null;
+    colorSpace: string | null;
+    colorTransfer: string | null;
+    colorPrimaries: string | null;
+    bitDepth?: number;
+}
+
 export interface VideoMetadata {
     duration: number;
     fileSize: number;
@@ -22,13 +31,16 @@ export interface VideoMetadata {
         channels: number;
         sampleRate: number;
     };
+    hdr?: HDRInfo;
 }
 
 export interface CompressionSettings {
     targetHeight: number;      // 480, 720, 1080, 1440, 2160
-    fps: number;               // 24, 30, 60
+    fps: number | 'auto';      // 24, 30, 60, or 'auto' (preserve source)
     codec: 'h264' | 'h265' | 'av1';
     audioBitrate: number;      // kbps: 64, 96, 128, 192
+    mode: 'size' | 'quality';  // Optimization mode
+    crf?: number;              // Quality mode: 18-32 (lower = better quality)
 }
 
 export interface SizeEstimate {
@@ -39,8 +51,30 @@ export interface SizeEstimate {
     totalBitrate: number;      // kbps
     compressionRatio: number;  // 0-1, how much smaller
     qualityImpact: 'minimal' | 'moderate' | 'significant' | 'severe';
+    qualityScore: number;      // 1-5 stars (for CRF mode)
     warnings: string[];
 }
+
+// CRF presets for quality-based compression
+export const CRF_PRESETS = [
+    { value: 18, label: 'Excellent', description: 'Visually lossless', stars: 5 },
+    { value: 21, label: 'Very Good', description: 'High quality', stars: 4 },
+    { value: 24, label: 'Good', description: 'Balanced', stars: 3 },
+    { value: 28, label: 'Acceptable', description: 'Noticeable compression', stars: 2 },
+    { value: 32, label: 'Small', description: 'Heavy compression', stars: 1 },
+] as const;
+
+// Recommended CRF by resolution and codec
+export const getRecommendedCrf = (height: number, codec: string): number => {
+    // H.265/AV1 can use higher CRF for same quality (more efficient)
+    const codecOffset = codec === 'h264' ? 0 : codec === 'h265' ? 4 : 6;
+
+    if (height >= 2160) return 20 + codecOffset; // 4K
+    if (height >= 1440) return 22 + codecOffset; // 1440p
+    if (height >= 1080) return 23 + codecOffset; // 1080p
+    if (height >= 720) return 24 + codecOffset;  // 720p
+    return 26 + codecOffset; // 480p
+};
 
 // Standard resolutions with their target heights
 export const RESOLUTIONS = [
@@ -51,7 +85,7 @@ export const RESOLUTIONS = [
     { label: '4K', height: 2160, width: 3840 },
 ] as const;
 
-export const FPS_OPTIONS = [24, 30, 60] as const;
+export const FPS_OPTIONS = ['auto', 24, 30, 60] as const;
 
 export const CODEC_OPTIONS = [
     { value: 'h264', label: 'H.264', description: 'Fast encoding, wide compatibility', efficiency: 1.0 },
@@ -82,8 +116,9 @@ export function calculateEstimatedSize(
     const targetPixels = targetWidth * settings.targetHeight;
     const pixelRatio = Math.min(targetPixels / sourcePixels, 1); // Can't upscale
 
-    // Calculate FPS ratio
-    const fpsRatio = Math.min(settings.fps / metadata.video.fps, 1);
+    // Calculate FPS ratio - 'auto' means preserve source FPS
+    const effectiveFps = settings.fps === 'auto' ? metadata.video.fps : settings.fps;
+    const fpsRatio = Math.min(effectiveFps / metadata.video.fps, 1);
 
     // Get codec efficiency multiplier
     const codecInfo = CODEC_OPTIONS.find(c => c.value === settings.codec);
@@ -162,8 +197,66 @@ export function calculateEstimatedSize(
         totalBitrate: Math.round(totalBitrate),
         compressionRatio: Math.round(compressionRatio * 100) / 100,
         qualityImpact,
+        qualityScore: calculateQualityScore(settings, qualityImpact),
         warnings,
     };
+}
+
+/**
+ * Calculate quality score (1-5 stars) based on settings
+ */
+function calculateQualityScore(
+    settings: CompressionSettings,
+    qualityImpact: SizeEstimate['qualityImpact']
+): number {
+    // If CRF mode, use CRF value directly
+    if (settings.mode === 'quality' && settings.crf !== undefined) {
+        if (settings.crf <= 18) return 5;
+        if (settings.crf <= 21) return 4;
+        if (settings.crf <= 24) return 3;
+        if (settings.crf <= 28) return 2;
+        return 1;
+    }
+
+    // Size mode: derive from quality impact
+    switch (qualityImpact) {
+        case 'minimal': return 5;
+        case 'moderate': return 3;
+        case 'significant': return 2;
+        case 'severe': return 1;
+        default: return 4;
+    }
+}
+
+/**
+ * Estimate file size based on CRF value
+ * This is an approximation based on typical CRF-to-size ratios
+ */
+export function estimateSizeFromCrf(
+    metadata: VideoMetadata,
+    crf: number,
+    codec: CompressionSettings['codec'],
+    targetHeight: number
+): number {
+    // Base size estimation
+    const sourcePixels = metadata.video.width * metadata.video.height;
+    const targetWidth = Math.round((targetHeight / metadata.video.height) * metadata.video.width);
+    const targetPixels = targetWidth * targetHeight;
+    const pixelRatio = Math.min(targetPixels / sourcePixels, 1);
+
+    // CRF to bitrate factor (empirical approximation)
+    // CRF 18 = ~80% of source bitrate, each +1 CRF = ~10% reduction
+    const crfFactor = Math.pow(0.9, (crf - 18) / 2);
+
+    // Codec efficiency
+    const codecFactor = codec === 'h264' ? 1.0 : codec === 'h265' ? 0.6 : 0.5;
+
+    // Calculate estimated bitrate
+    const estimatedBitrate = metadata.video.bitrate * pixelRatio * crfFactor * codecFactor;
+
+    // Size = bitrate * duration / 8
+    const estimatedBytes = (estimatedBitrate * 1000 * metadata.duration) / 8;
+    return estimatedBytes;
 }
 
 /**
@@ -178,8 +271,11 @@ export function getAvailableResolutions(sourceHeight: number) {
  * Get available FPS options based on source video
  * Only returns FPS <= source FPS
  */
-export function getAvailableFps(sourceFps: number) {
-    return FPS_OPTIONS.filter(fps => fps <= Math.ceil(sourceFps));
+export function getAvailableFps(sourceFps: number): (typeof FPS_OPTIONS)[number][] {
+    return FPS_OPTIONS.filter(fps => {
+        if (fps === 'auto') return true; // Auto always available
+        return fps <= Math.ceil(sourceFps);
+    });
 }
 
 /**

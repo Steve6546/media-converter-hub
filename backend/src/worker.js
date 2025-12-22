@@ -29,7 +29,7 @@ const ensureDir = (dirPath) => {
 
 const safeUnlink = (filePath) => {
   if (!filePath) return;
-  fs.unlink(filePath, () => {});
+  fs.unlink(filePath, () => { });
 };
 
 const getVideoDuration = (filePath) =>
@@ -78,10 +78,14 @@ const processCompress = async (job) => {
   const duration = await getVideoDuration(input.path);
   const targetSizeMb = Math.min(options.targetSizeMb || MAX_OUTPUT_MB, MAX_OUTPUT_MB);
 
-  let audioBitrateKbps = 0;
-  if (options.audioMode === 'compress-96') audioBitrateKbps = 96;
-  if (options.audioMode === 'compress-128') audioBitrateKbps = 128;
-  if (options.audioMode === 'keep') audioBitrateKbps = 192;
+  // Handle audio bitrate - prefer explicit setting, otherwise derive from audioMode
+  let audioBitrateKbps = options.audioBitrateKbps || 0;
+  if (!audioBitrateKbps) {
+    if (options.audioMode === 'compress-96') audioBitrateKbps = 96;
+    else if (options.audioMode === 'compress-128') audioBitrateKbps = 128;
+    else if (options.audioMode === 'keep') audioBitrateKbps = 192;
+    else audioBitrateKbps = 128;
+  }
 
   const totalBitrateKbps = Math.max(
     300,
@@ -93,9 +97,40 @@ const processCompress = async (job) => {
       ? Math.max(options.bitrateKbps, 200)
       : Math.max(totalBitrateKbps - audioBitrateKbps, 200);
 
-  const height = options.resolution === '1080p' ? 1080 : options.resolution === '720p' ? 720 : 480;
-  const videoFilters = [`scale=-2:${height}`, `fps=${options.fps}`].join(',');
-  const videoCodec = options.codec === 'h265' ? 'libx265' : 'libx264';
+  // Map resolution string to height value
+  const getHeight = (resolution) => {
+    switch (resolution) {
+      case '4k': return 2160;
+      case '1440p': return 1440;
+      case '1080p': return 1080;
+      case '720p': return 720;
+      case '480p': return 480;
+      default: return 1080;
+    }
+  };
+  const height = getHeight(options.resolution);
+
+  // Build video filters - only add fps filter if not 'auto'
+  const videoFilterParts = [`scale=-2:${height}`];
+  if (options.fps !== 'auto' && options.fps) {
+    videoFilterParts.push(`fps=${options.fps}`);
+  }
+  const videoFilters = videoFilterParts.join(',');
+
+  // Map codec to encoder
+  const getCodec = (codec) => {
+    switch (codec) {
+      case 'h265': return 'libx265';
+      case 'av1': return 'libsvtav1';
+      default: return 'libx264';
+    }
+  };
+  const videoCodec = getCodec(options.codec);
+
+  // AV1-specific warning
+  if (options.codec === 'av1') {
+    warnings.push('AV1 encoding is significantly slower than H.264/H.265. Please be patient.');
+  }
 
   const buildCommand = (useAudioCopy) => {
     const outputOptions = [
@@ -103,19 +138,38 @@ const processCompress = async (job) => {
       videoFilters,
       '-c:v',
       videoCodec,
-      '-b:v',
-      `${videoBitrateKbps}k`,
-      '-preset',
-      'medium',
+    ];
+
+    // Use CRF for quality mode, bitrate for size mode
+    if (options.mode === 'quality' && options.crf) {
+      // CRF-based encoding (quality mode)
+      outputOptions.push('-crf', String(options.crf));
+    } else {
+      // Bitrate-based encoding (size mode)
+      outputOptions.push('-b:v', `${videoBitrateKbps}k`);
+    }
+
+    // Codec-specific presets
+    if (options.codec === 'av1') {
+      outputOptions.push('-preset', '6'); // 0-13, lower = slower/better
+    } else {
+      outputOptions.push('-preset', 'medium');
+    }
+
+    outputOptions.push(
       '-pix_fmt',
       'yuv420p',
       '-movflags',
-      '+faststart',
-      '-fs',
-      `${targetSizeMb}M`,
-    ];
+      '+faststart'
+    );
 
-    if (options.bitrateMode === 'auto') {
+    // Only add file size limit for size mode
+    if (options.mode !== 'quality') {
+      outputOptions.push('-fs', `${targetSizeMb}M`);
+    }
+
+    // Add bitrate limiting for size mode with auto bitrate
+    if (options.mode !== 'quality' && options.bitrateMode === 'auto') {
       outputOptions.push(
         '-maxrate',
         `${videoBitrateKbps}k`,
@@ -168,6 +222,76 @@ const processCompress = async (job) => {
       },
     ],
     warnings,
+  };
+};
+
+/**
+ * Generate a quick preview video for comparison
+ * Uses low resolution, ultrafast preset for speed
+ */
+const processPreview = async (job) => {
+  const { input, options } = job.data;
+  const outputDir = buildOutputDir(job.id);
+  const outputFile = `preview_${job.id}.mp4`;
+  const outputPath = path.join(outputDir, outputFile);
+
+  // Get video duration to limit preview length
+  const duration = await getVideoDuration(input.path);
+  const previewDuration = Math.min(options.duration || 10, duration, 15); // Max 15 seconds
+
+  // Map resolution to height
+  const height = options.resolution === '720p' ? 720 : options.resolution === '1080p' ? 1080 : 360;
+
+  const videoFilters = [`scale=-2:${height}`];
+  if (options.fps && options.fps !== 'auto') {
+    videoFilters.push(`fps=${options.fps}`);
+  }
+
+  const videoCodec = options.codec === 'h265' ? 'libx265' : options.codec === 'av1' ? 'libsvtav1' : 'libx264';
+
+  const outputOptions = [
+    '-t',
+    String(previewDuration),
+    '-vf',
+    videoFilters.join(','),
+    '-c:v',
+    videoCodec,
+    '-crf',
+    String(options.crf || 28),
+    '-preset',
+    'ultrafast', // Fast encoding for preview
+    '-pix_fmt',
+    'yuv420p',
+    '-movflags',
+    '+faststart',
+    '-c:a',
+    'aac',
+    '-b:a',
+    '64k', // Low audio bitrate for preview
+  ];
+
+  const command = ffmpeg(input.path)
+    .outputOptions(outputOptions)
+    .output(outputPath);
+
+  await runFfmpeg(command, job);
+  job.updateProgress(100);
+
+  const size = fs.statSync(outputPath).size;
+  return {
+    files: [
+      {
+        name: outputFile,
+        url: buildPublicUrl(job.id, outputFile),
+        size,
+        duration: previewDuration,
+      },
+    ],
+    previewSettings: {
+      resolution: height,
+      crf: options.crf || 28,
+      codec: options.codec || 'h264',
+    },
   };
 };
 
@@ -414,6 +538,8 @@ const worker = new Worker(
       switch (job.name) {
         case 'compress':
           return await processCompress(job);
+        case 'preview':
+          return await processPreview(job);
         case 'enhance':
           return await processEnhance(job);
         case 'thumbnails':

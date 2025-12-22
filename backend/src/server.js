@@ -16,6 +16,15 @@ const {
   validateSubtitleOptions,
   validateImageOptions,
 } = require('./studio/validators');
+const { probeVideo } = require('./studio/probe');
+const {
+  checkYtDlpInstalled,
+  analyzeUrl,
+  downloadMedia,
+  parseProgress,
+  MEDIA_OUTPUT_DIR,
+} = require('./media-downloader');
+
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -85,6 +94,7 @@ app.use((req, res, next) => {
 app.use('/output', express.static(OUTPUT_DIR));
 app.use('/covers', express.static(COVERS_DIR));
 app.use('/studio-output', express.static(STUDIO_OUTPUT_DIR));
+app.use('/media-downloads', express.static(MEDIA_OUTPUT_DIR));
 
 // Multer config for video uploads
 const videoStorage = multer.diskStorage({
@@ -169,6 +179,10 @@ const studioUpload = multer({
 // In-memory store for audio files (replace with database in production)
 const audioFilesStore = new Map();
 const activeConversions = new Map();
+
+// In-memory stores for media downloader
+const mediaAnalysisCache = new Map(); // Cache for URL analysis results (5 min TTL)
+const activeMediaDownloads = new Map(); // Track active downloads
 
 // Get video duration helper
 const getVideoDuration = (filePath) => {
@@ -505,6 +519,68 @@ app.post('/api/audio/:id/apply-edits', async (req, res) => {
   }
 });
 
+// API: Probe video for metadata
+app.post('/api/studio/probe', studioUpload.single('file'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file provided' });
+  }
+
+  const filePath = req.file.path;
+
+  try {
+    const metadata = await probeVideo(filePath);
+
+    // Clean up the uploaded file after probing
+    fs.unlink(filePath, () => { });
+
+    res.json(metadata);
+  } catch (error) {
+    // Clean up on error too
+    fs.unlink(filePath, () => { });
+
+    const message = error instanceof Error ? error.message : 'Failed to probe video';
+    res.status(400).json({ error: message });
+  }
+});
+
+// API: Generate quick preview
+app.post('/api/studio/preview', studioUpload.single('file'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file provided' });
+  }
+
+  const filePath = req.file.path;
+  const options = JSON.parse(req.body.options || '{}');
+
+  try {
+    const queue = getStudioQueue();
+    const job = await queue.add('preview', {
+      input: {
+        name: req.file.originalname,
+        path: filePath,
+        mimetype: req.file.mimetype,
+        size: req.file.size,
+      },
+      options: {
+        resolution: options.resolution || '480p',
+        fps: options.fps || 30,
+        codec: options.codec || 'h264',
+        crf: options.crf || 28,
+        duration: options.duration || 10, // Max 10 seconds preview
+      },
+    });
+
+    res.json({
+      jobId: job.id,
+      message: 'Preview generation started',
+    });
+  } catch (error) {
+    fs.unlink(filePath, () => { });
+    const message = error instanceof Error ? error.message : 'Failed to start preview';
+    res.status(500).json({ error: message });
+  }
+});
+
 // API: Create studio job
 app.post('/api/studio/jobs', studioUpload.fields([
   { name: 'file', maxCount: 1 },
@@ -681,6 +757,268 @@ app.get('/api/studio/jobs/:jobId/stream', async (req, res) => {
   req.on('close', () => {
     clearInterval(interval);
   });
+});
+
+// ==========================================
+// MEDIA DOWNLOADER API ENDPOINTS
+// ==========================================
+
+// API: Check yt-dlp availability
+app.get('/api/media/status', async (req, res) => {
+  try {
+    const status = await checkYtDlpInstalled();
+    res.json(status);
+  } catch (error) {
+    res.status(500).json({ installed: false, error: error.message });
+  }
+});
+
+// API: Analyze media URL
+app.post('/api/media/analyze', async (req, res) => {
+  const { url } = req.body;
+
+  if (!url) {
+    return res.status(400).json({ error: 'URL is required' });
+  }
+
+  // Check cache first (5 minute TTL)
+  const cachedResult = mediaAnalysisCache.get(url);
+  if (cachedResult && Date.now() - cachedResult.timestamp < 5 * 60 * 1000) {
+    console.log(`📦 [/api/media/analyze] Cache hit for: ${url}`);
+    return res.json(cachedResult.data);
+  }
+
+  console.log(`🔍 [/api/media/analyze] Analyzing: ${url}`);
+
+  try {
+    const result = await analyzeUrl(url);
+
+    // Cache the result
+    mediaAnalysisCache.set(url, {
+      data: result,
+      timestamp: Date.now(),
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error(`❌ [/api/media/analyze] Error: ${error.message}`);
+    res.status(400).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// API: Start media download
+app.post('/api/media/download', async (req, res) => {
+  const { url, format_id, audio_only = false } = req.body;
+
+  if (!url) {
+    return res.status(400).json({ error: 'URL is required' });
+  }
+
+  console.log(`📥 [/api/media/download] Starting download: ${url} (format: ${format_id || 'best'})`);
+
+  try {
+    const { downloadId, process, outputDir } = downloadMedia(url, format_id, {
+      audioOnly: audio_only,
+    });
+
+    // Track the download
+    activeMediaDownloads.set(downloadId, {
+      status: 'starting',
+      progress: 0,
+      url,
+      format_id,
+      audio_only,
+      startedAt: Date.now(),
+      process,
+      outputPath: null,
+      error: null,
+    });
+
+    // Handle process output for progress tracking
+    let lastOutputPath = null;
+
+    process.stdout.on('data', (data) => {
+      const lines = data.toString().split('\n');
+      for (const line of lines) {
+        const parsed = parseProgress(line);
+        if (parsed) {
+          const download = activeMediaDownloads.get(downloadId);
+          if (download) {
+            if (parsed.type === 'progress') {
+              download.status = 'downloading';
+              download.progress = parsed.percent;
+              download.speed = `${parsed.speed}${parsed.speedUnit}iB/s`;
+              download.eta = parsed.eta;
+            } else if (parsed.type === 'destination') {
+              lastOutputPath = parsed.path;
+            } else if (parsed.type === 'merging') {
+              download.status = 'merging';
+              lastOutputPath = parsed.path;
+            } else if (parsed.type === 'complete') {
+              download.progress = 100;
+            }
+            activeMediaDownloads.set(downloadId, download);
+          }
+        }
+      }
+    });
+
+    process.stderr.on('data', (data) => {
+      console.error(`[yt-dlp stderr] ${data.toString()}`);
+    });
+
+    process.on('close', (code) => {
+      const download = activeMediaDownloads.get(downloadId);
+      if (download) {
+        if (code === 0) {
+          // Find the downloaded file
+          let finalPath = lastOutputPath;
+          if (!finalPath) {
+            // Try to find the file in output dir
+            const files = fs.readdirSync(outputDir);
+            const downloadedFile = files.find((f) => f.startsWith(downloadId));
+            if (downloadedFile) {
+              finalPath = path.join(outputDir, downloadedFile);
+            }
+          }
+
+          download.status = 'completed';
+          download.progress = 100;
+          download.outputPath = finalPath;
+          download.downloadUrl = finalPath
+            ? `/media-downloads/${path.basename(finalPath)}`
+            : null;
+          download.completedAt = Date.now();
+          console.log(`✅ [/api/media/download] Completed: ${downloadId}`);
+        } else {
+          download.status = 'failed';
+          download.error = `Download failed with exit code ${code}`;
+          console.error(`❌ [/api/media/download] Failed: ${downloadId}`);
+        }
+        activeMediaDownloads.set(downloadId, download);
+      }
+    });
+
+    process.on('error', (err) => {
+      const download = activeMediaDownloads.get(downloadId);
+      if (download) {
+        download.status = 'failed';
+        download.error = err.message;
+        activeMediaDownloads.set(downloadId, download);
+      }
+    });
+
+    res.json({
+      success: true,
+      downloadId,
+      message: 'Download started',
+    });
+  } catch (error) {
+    console.error(`❌ [/api/media/download] Error: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// API: Get download status
+app.get('/api/media/download/:downloadId', (req, res) => {
+  const { downloadId } = req.params;
+  const download = activeMediaDownloads.get(downloadId);
+
+  if (!download) {
+    return res.status(404).json({ error: 'Download not found' });
+  }
+
+  res.json({
+    id: downloadId,
+    status: download.status,
+    progress: download.progress,
+    speed: download.speed || null,
+    eta: download.eta || null,
+    downloadUrl: download.downloadUrl || null,
+    error: download.error || null,
+  });
+});
+
+// API: Stream download progress (SSE)
+app.get('/api/media/download/:downloadId/stream', (req, res) => {
+  const { downloadId } = req.params;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const sendUpdate = () => {
+    const download = activeMediaDownloads.get(downloadId);
+    if (!download) {
+      res.write(`data: ${JSON.stringify({ status: 'not_found' })}\n\n`);
+      res.end();
+      return;
+    }
+
+    res.write(
+      `data: ${JSON.stringify({
+        id: downloadId,
+        status: download.status,
+        progress: download.progress,
+        speed: download.speed || null,
+        eta: download.eta || null,
+        downloadUrl: download.downloadUrl || null,
+        error: download.error || null,
+      })}\n\n`
+    );
+
+    if (download.status === 'completed' || download.status === 'failed') {
+      res.end();
+    }
+  };
+
+  sendUpdate();
+  const interval = setInterval(sendUpdate, 500);
+
+  req.on('close', () => {
+    clearInterval(interval);
+  });
+});
+
+// API: Cancel download
+app.delete('/api/media/download/:downloadId', (req, res) => {
+  const { downloadId } = req.params;
+  const download = activeMediaDownloads.get(downloadId);
+
+  if (!download) {
+    return res.status(404).json({ error: 'Download not found' });
+  }
+
+  if (download.process && download.status === 'downloading') {
+    download.process.kill('SIGTERM');
+    download.status = 'cancelled';
+    activeMediaDownloads.set(downloadId, download);
+  }
+
+  res.json({ success: true, message: 'Download cancelled' });
+});
+
+// API: List recent downloads
+app.get('/api/media/downloads', (req, res) => {
+  const downloads = Array.from(activeMediaDownloads.entries())
+    .map(([id, data]) => ({
+      id,
+      status: data.status,
+      progress: data.progress,
+      downloadUrl: data.downloadUrl || null,
+      startedAt: data.startedAt,
+      completedAt: data.completedAt || null,
+    }))
+    .sort((a, b) => b.startedAt - a.startedAt)
+    .slice(0, 20);
+
+  res.json(downloads);
 });
 
 // Health check

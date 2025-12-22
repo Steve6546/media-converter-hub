@@ -332,12 +332,47 @@ export const StudioSection = () => {
       return;
     }
 
-    const compressOptions = {
-      ...videoSettings,
-      fps: Number(videoSettings.fps),
-      targetSizeMb: Math.min(100, Math.max(1, videoSettings.targetSizeMb)),
-      brand: brandOptions,
-    };
+    // Use real compression settings from RealCompressionPanel if available
+    let compressOptions;
+    if (realCompressionSettings) {
+      // Map targetHeight to resolution string
+      const heightToResolution: Record<number, string> = {
+        480: '480p',
+        720: '720p',
+        1080: '1080p',
+        1440: '1440p',
+        2160: '4k',
+      };
+      const resolution = heightToResolution[realCompressionSettings.targetHeight] || '1080p';
+
+      // Map audioBitrate to audioMode
+      let audioMode = 'keep';
+      if (realCompressionSettings.audioBitrate <= 96) {
+        audioMode = 'compress-96';
+      } else if (realCompressionSettings.audioBitrate <= 128) {
+        audioMode = 'compress-128';
+      }
+
+      compressOptions = {
+        resolution,
+        fps: realCompressionSettings.fps,
+        bitrateMode: 'auto',
+        bitrateKbps: 5000, // Will be calculated by worker based on size
+        codec: realCompressionSettings.codec,
+        audioMode,
+        audioBitrateKbps: realCompressionSettings.audioBitrate,
+        targetSizeMb: Math.round(realCompressionSettings.estimatedSize / (1024 * 1024)),
+        brand: brandOptions,
+      };
+    } else {
+      // Fallback to old preset-based settings
+      compressOptions = {
+        ...videoSettings,
+        fps: Number(videoSettings.fps),
+        targetSizeMb: Math.min(500, Math.max(1, videoSettings.targetSizeMb)),
+        brand: brandOptions,
+      };
+    }
 
     await startStudioJob('compress', selectedFile, compressOptions);
 

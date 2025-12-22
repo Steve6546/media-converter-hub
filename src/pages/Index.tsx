@@ -4,12 +4,13 @@ import { TabNavigation } from '@/components/layout/TabNavigation';
 import { ConvertSection } from '@/components/convert/ConvertSection';
 import { LibrarySection } from '@/components/library/LibrarySection';
 import { StudioSection } from '@/components/studio/StudioSection';
+import { DownloadSection } from '@/components/download/DownloadSection';
 import { MediaProvider, useMedia } from '@/contexts/MediaContext';
 import { StudioProvider } from '@/contexts/StudioContext';
 import { Helmet } from 'react-helmet-async';
 
 const DashboardContent = () => {
-  const [activeTab, setActiveTab] = useState<'convert' | 'library' | 'studio'>('convert');
+  const [activeTab, setActiveTab] = useState<'convert' | 'library' | 'studio' | 'download'>('convert');
   const { audioFiles } = useMedia();
 
   return (
@@ -18,7 +19,7 @@ const DashboardContent = () => {
         <title>Smart Media Converter - Video to MP3</title>
         <meta
           name="description"
-          content="Convert video files to high-quality MP3 audio. Edit, trim, and manage your media library with ease."
+          content="Convert video files to high-quality MP3 audio. Download from YouTube, TikTok, Instagram and more. Edit, trim, and manage your media library with ease."
         />
       </Helmet>
 
@@ -33,6 +34,7 @@ const DashboardContent = () => {
         <main className="flex-1">
           <div className="container py-8 px-4 md:px-6">
             {activeTab === 'convert' && <ConvertSection />}
+            {activeTab === 'download' && <DownloadSection />}
             {activeTab === 'library' && (
               <LibrarySection onNavigateToConvert={() => setActiveTab('convert')} />
             )}
@@ -43,7 +45,7 @@ const DashboardContent = () => {
         <footer className="border-t border-border py-6">
           <div className="container px-4 md:px-6">
             <p className="text-center text-sm text-muted-foreground">
-              Smart Media Converter — Convert, edit, and manage your audio files
+              Smart Media Converter — Convert, download, edit, and manage your media files
             </p>
           </div>
         </footer>
@@ -63,3 +65,4 @@ const Index = () => {
 };
 
 export default Index;
+

@@ -23,16 +23,17 @@ const toBoolean = (value, fallback = false) => {
 };
 
 const normalizeResolution = (value) =>
-  RESOLUTION_OPTIONS.includes(value) ? value : '720p';
+  RESOLUTION_OPTIONS.includes(value) ? value : '1080p';
 
 const normalizeFps = (value) => {
+  if (value === 'auto' || value === 0) return 'auto';
   const fps = Number(value);
   return FPS_OPTIONS.includes(fps) ? fps : 30;
 };
 
 const normalizeCodec = (value) => {
   if (!VIDEO_CODECS.includes(value)) {
-    throw new Error('Codec must be h264 or h265');
+    return 'h264'; // Default to h264 if invalid
   }
   return value;
 };
@@ -44,7 +45,7 @@ const normalizeAudioMode = (value) =>
   AUDIO_MODES.includes(value) ? value : 'keep';
 
 const normalizeTargetSize = (value) => {
-  const size = toNumber(value, 60);
+  const size = toNumber(value, 100);
   return Math.min(Math.max(size, 1), MAX_OUTPUT_MB);
 };
 
@@ -59,10 +60,13 @@ const validateCompressOptions = (raw = {}) => ({
   resolution: normalizeResolution(raw.resolution),
   fps: normalizeFps(raw.fps),
   bitrateMode: normalizeBitrateMode(raw.bitrateMode),
-  bitrateKbps: Math.max(toNumber(raw.bitrateKbps, 2500), 200),
+  bitrateKbps: Math.max(toNumber(raw.bitrateKbps, 5000), 200),
   codec: normalizeCodec(raw.codec || 'h264'),
   audioMode: normalizeAudioMode(raw.audioMode),
   targetSizeMb: normalizeTargetSize(raw.targetSizeMb),
+  audioBitrateKbps: Math.max(toNumber(raw.audioBitrateKbps, 128), 32),
+  mode: raw.mode === 'quality' ? 'quality' : 'size',
+  crf: raw.mode === 'quality' ? Math.min(Math.max(toNumber(raw.crf, 23), 18), 51) : undefined,
   brand: raw.brand || {},
 });
 

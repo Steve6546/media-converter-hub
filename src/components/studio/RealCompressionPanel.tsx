@@ -23,9 +23,12 @@ import {
     calculateEstimatedSize,
     getAvailableResolutions,
     getAvailableFps,
+    getRecommendedCrf,
+    estimateSizeFromCrf,
     RESOLUTIONS,
     CODEC_OPTIONS,
     AUDIO_BITRATE_OPTIONS,
+    CRF_PRESETS,
     formatFileSize,
     formatDuration,
 } from '@/lib/compressionCalculator';
@@ -44,10 +47,12 @@ export const RealCompressionPanel = ({
     const { metadata, isLoading, error, probeVideo } = useVideoMetadata();
 
     // Compression settings state
+    const [mode, setMode] = useState<'size' | 'quality'>('size');
     const [targetHeight, setTargetHeight] = useState(1080);
-    const [fps, setFps] = useState(30);
+    const [fps, setFps] = useState<number | 'auto'>('auto');
     const [codec, setCodec] = useState<'h264' | 'h265' | 'av1'>('h264');
     const [audioBitrate, setAudioBitrate] = useState(128);
+    const [crf, setCrf] = useState(23);
 
     // Probe video when file changes
     useEffect(() => {
@@ -68,14 +73,8 @@ export const RealCompressionPanel = ({
                 setTargetHeight(closest.height);
             }
 
-            // Set FPS to source or closest
-            const availableFps = getAvailableFps(metadata.video.fps);
-            if (availableFps.length > 0) {
-                const closest = availableFps.reduce((prev, curr) =>
-                    Math.abs(curr - metadata.video.fps) < Math.abs(prev - metadata.video.fps) ? curr : prev
-                );
-                setFps(closest);
-            }
+            // Default to Auto FPS
+            setFps('auto');
         }
     }, [metadata]);
 
@@ -87,8 +86,10 @@ export const RealCompressionPanel = ({
             fps,
             codec,
             audioBitrate,
+            mode,
+            crf: mode === 'quality' ? crf : undefined,
         });
-    }, [metadata, targetHeight, fps, codec, audioBitrate]);
+    }, [metadata, targetHeight, fps, codec, audioBitrate, mode, crf]);
 
     // Notify parent of settings changes
     useEffect(() => {
@@ -98,10 +99,12 @@ export const RealCompressionPanel = ({
                 fps,
                 codec,
                 audioBitrate,
+                mode,
+                crf: mode === 'quality' ? crf : undefined,
                 estimatedSize: sizeEstimate.estimatedBytes,
             });
         }
-    }, [sizeEstimate, targetHeight, fps, codec, audioBitrate, onSettingsChange]);
+    }, [sizeEstimate, targetHeight, fps, codec, audioBitrate, mode, crf, onSettingsChange]);
 
     const availableResolutions = metadata ? getAvailableResolutions(metadata.video.height) : RESOLUTIONS;
     const availableFpsOptions = metadata ? getAvailableFps(metadata.video.fps) : [24, 30, 60];
@@ -145,7 +148,7 @@ export const RealCompressionPanel = ({
             {/* Source Info Panel */}
             <Card className="bg-muted/30">
                 <CardContent className="py-4">
-                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
                         <div className="space-y-1">
                             <p className="text-xs text-muted-foreground">Resolution</p>
                             <p className="font-medium">{metadata.video.width} × {metadata.video.height}</p>
@@ -162,6 +165,22 @@ export const RealCompressionPanel = ({
                             <p className="text-xs text-muted-foreground">Bitrate</p>
                             <p className="font-medium">{Math.round(metadata.video.bitrate).toLocaleString()} kbps</p>
                         </div>
+                        <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground">Frame Rate</p>
+                            <div className="flex items-center gap-1">
+                                <p className="font-medium">{metadata.video.fps.toFixed(1)} fps</p>
+                                {metadata.hdr?.detected && (
+                                    <Badge variant="secondary" className="text-[10px] bg-purple-500/20 text-purple-400">
+                                        {metadata.hdr.type || 'HDR'}
+                                    </Badge>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>Video: {metadata.video.codec.toUpperCase()}</span>
+                        <span>•</span>
+                        <span>Audio: {metadata.audio.codec.toUpperCase()}</span>
                     </div>
                 </CardContent>
             </Card>
@@ -178,6 +197,65 @@ export const RealCompressionPanel = ({
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                    {/* Mode Toggle */}
+                    <div className="space-y-3">
+                        <Label className="flex items-center gap-2">
+                            Optimization Mode
+                        </Label>
+                        <div className="grid grid-cols-2 gap-2">
+                            <Button
+                                variant={mode === 'size' ? 'default' : 'outline'}
+                                className="w-full"
+                                onClick={() => setMode('size')}
+                            >
+                                <TrendingDown className="mr-2 h-4 w-4" />
+                                Optimize Size
+                            </Button>
+                            <Button
+                                variant={mode === 'quality' ? 'default' : 'outline'}
+                                className="w-full"
+                                onClick={() => setMode('quality')}
+                            >
+                                ⭐ Optimize Quality
+                            </Button>
+                        </div>
+                    </div>
+
+                    {/* CRF Slider (Quality Mode) */}
+                    {mode === 'quality' && (
+                        <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
+                            <Label className="flex items-center justify-between">
+                                <span className="flex items-center gap-2">
+                                    Quality Level (CRF)
+                                </span>
+                                <span className="flex items-center gap-1">
+                                    {Array.from({ length: sizeEstimate?.qualityScore || 3 }).map((_, i) => (
+                                        <span key={i} className="text-yellow-500">⭐</span>
+                                    ))}
+                                    {Array.from({ length: 5 - (sizeEstimate?.qualityScore || 3) }).map((_, i) => (
+                                        <span key={i} className="text-muted-foreground/30">⭐</span>
+                                    ))}
+                                </span>
+                            </Label>
+                            <Slider
+                                value={[crf]}
+                                onValueChange={([v]) => setCrf(v)}
+                                min={18}
+                                max={32}
+                                step={1}
+                                className="w-full"
+                            />
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>Best Quality (18)</span>
+                                <span className="font-medium">CRF: {crf}</span>
+                                <span>Smallest Size (32)</span>
+                            </div>
+                            <div className="rounded-md bg-muted/50 p-2 text-center text-sm">
+                                {CRF_PRESETS.find(p => p.value === crf)?.label || 'Custom'}: {CRF_PRESETS.find(p => p.value === crf)?.description || `CRF ${crf}`}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Resolution Slider */}
                     <div className="space-y-3">
                         <div className="flex items-center justify-between">
@@ -218,14 +296,21 @@ export const RealCompressionPanel = ({
                         </Label>
                         <RadioGroup
                             value={fps.toString()}
-                            onValueChange={(v) => setFps(Number(v))}
-                            className="grid grid-cols-3 gap-2"
+                            onValueChange={(v) => setFps(v === 'auto' ? 'auto' : Number(v))}
+                            className="grid grid-cols-4 gap-2"
                         >
                             {availableFpsOptions.map((f) => (
                                 <div key={f} className="flex items-center space-x-2 rounded-lg border p-3 hover:bg-muted/50">
                                     <RadioGroupItem value={f.toString()} id={`fps-${f}`} />
                                     <Label htmlFor={`fps-${f}`} className="flex-1 cursor-pointer">
-                                        {f} fps
+                                        {f === 'auto' ? (
+                                            <span className="flex items-center gap-1">
+                                                Auto
+                                                <span className="text-xs text-muted-foreground">({metadata?.video.fps.toFixed(0)})</span>
+                                            </span>
+                                        ) : (
+                                            `${f} fps`
+                                        )}
                                     </Label>
                                 </div>
                             ))}
