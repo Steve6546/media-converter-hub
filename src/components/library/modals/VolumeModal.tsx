@@ -49,6 +49,7 @@ export const VolumeModal = ({
     if (!open) return;
     let cancelled = false;
     let context: AudioContext | null = null;
+    let isClosed = false;
 
     const analyze = async () => {
       try {
@@ -78,8 +79,9 @@ export const VolumeModal = ({
       } catch {
         setPeak(null);
       } finally {
-        if (context) {
-          context.close();
+        if (context && !isClosed) {
+          isClosed = true;
+          context.close().catch(() => { });
         }
         if (!cancelled) {
           setIsAnalyzing(false);
@@ -91,8 +93,9 @@ export const VolumeModal = ({
 
     return () => {
       cancelled = true;
-      if (context) {
-        context.close();
+      if (context && !isClosed) {
+        isClosed = true;
+        context.close().catch(() => { });
       }
     };
   }, [audioUrl, open, trimEnd, trimStart]);
@@ -185,10 +188,10 @@ export const VolumeModal = ({
                 {isAnalyzing
                   ? 'Analyzing...'
                   : estimatedPeak === null
-                  ? 'Unavailable'
-                  : isClipping
-                  ? 'Clipping risk'
-                  : 'Safe'}
+                    ? 'Unavailable'
+                    : isClipping
+                      ? 'Clipping risk'
+                      : 'Safe'}
               </span>
             </div>
             <div className="mt-2 h-2 w-full rounded-full bg-muted">

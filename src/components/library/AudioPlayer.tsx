@@ -53,7 +53,8 @@ export const AudioPlayer = ({
     const handleReady = () => {
       const total = waveSurfer.getDuration();
       setDuration(total);
-      waveSurfer.setVolume(volume / 100);
+      // Clamp volume to valid range [0, 1] for HTML5 audio
+      waveSurfer.setVolume(Math.min(1, Math.max(0, volume / 100)));
       waveSurfer.setTime(trimStart);
     };
 
@@ -86,7 +87,8 @@ export const AudioPlayer = ({
     const waveSurfer = waveSurferRef.current;
     if (!waveSurfer) return;
 
-    waveSurfer.setVolume(volume / 100);
+    // Clamp volume to valid range [0, 1] for HTML5 audio
+    waveSurfer.setVolume(Math.min(1, Math.max(0, volume / 100)));
   }, [volume]);
 
   useEffect(() => {
@@ -137,9 +139,9 @@ export const AudioPlayer = ({
   const trimOverlay =
     safeDuration > 0
       ? {
-          left: `${(trimStart / safeDuration) * 100}%`,
-          width: `${((trimEnd - trimStart) / safeDuration) * 100}%`,
-        }
+        left: `${(trimStart / safeDuration) * 100}%`,
+        width: `${((trimEnd - trimStart) / safeDuration) * 100}%`,
+      }
       : { left: '0%', width: '100%' };
 
   return (

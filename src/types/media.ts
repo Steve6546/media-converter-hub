@@ -7,8 +7,11 @@ export interface AudioFile {
   createdAt: Date;
   audioUrl: string;
   volume: number;
+  normalize: boolean;
   trimStart: number;
   trimEnd: number;
+  fadeIn: number;   // 0 to 2 seconds
+  fadeOut: number;  // 0 to 2 seconds
 }
 
 export interface ConversionJob {

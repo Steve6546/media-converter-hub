@@ -116,17 +116,24 @@ export const LibrarySection = ({ onNavigateToConvert }: LibrarySectionProps) => 
             open={activeModal === 'volume'}
             onOpenChange={(open) => !open && closeModal()}
             currentVolume={selectedFile.volume}
-            onSave={(volume) => updateAudioFile(selectedFile.id, { volume })}
+            currentNormalize={selectedFile.normalize}
+            audioUrl={selectedFile.audioUrl}
+            trimStart={selectedFile.trimStart}
+            trimEnd={selectedFile.trimEnd}
+            onSave={(volume, normalize) => updateAudioFile(selectedFile.id, { volume, normalize })}
           />
 
           <TrimModal
             open={activeModal === 'trim'}
             onOpenChange={(open) => !open && closeModal()}
             duration={selectedFile.duration}
+            audioUrl={selectedFile.audioUrl}
             currentTrimStart={selectedFile.trimStart}
             currentTrimEnd={selectedFile.trimEnd}
-            onSave={(trimStart, trimEnd) =>
-              updateAudioFile(selectedFile.id, { trimStart, trimEnd })
+            currentFadeIn={selectedFile.fadeIn}
+            currentFadeOut={selectedFile.fadeOut}
+            onSave={(trimStart, trimEnd, fadeIn, fadeOut) =>
+              updateAudioFile(selectedFile.id, { trimStart, trimEnd, fadeIn, fadeOut })
             }
           />
 

@@ -1,7 +1,7 @@
-import { useState } from 'react';
 import { AudioFile } from '@/types/media';
 import { AudioPlayer } from './AudioPlayer';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
   TooltipContent,
@@ -58,18 +58,16 @@ export const AudioCard = ({
   const isVolumeChanged = volumeDelta !== 0;
   const newDuration = audioFile.trimEnd - audioFile.trimStart;
 
-  const tooltipParts = [
-    isTrimmed ? 'Trimmed' : null,
-    isVolumeChanged ? `Volume ${volumeDelta >= 0 ? '+' : ''}${volumeDelta}%` : null,
-  ].filter(Boolean);
+  // Build tooltip parts with better formatting
+  const tooltipParts: string[] = [];
+  if (isTrimmed) tooltipParts.push('Trimmed');
+  if (isVolumeChanged) tooltipParts.push(`Volume ${volumeDelta >= 0 ? '+' : ''}${volumeDelta}%`);
 
-  const durationText = isTrimmed
-    ? `Original ${formatDuration(audioFile.duration)} -> New ${formatDuration(newDuration)}`
-    : `Original ${formatDuration(audioFile.duration)}`;
+  const durationInfo = isTrimmed
+    ? `Original ${formatDuration(audioFile.duration)} → New ${formatDuration(newDuration)}`
+    : null;
 
-  const tooltipText = tooltipParts.length
-    ? `${tooltipParts.join(' - ')} - ${durationText}`
-    : durationText;
+  const hasModifications = isTrimmed || isVolumeChanged;
 
   return (
     <div className="group overflow-hidden rounded-xl border bg-card transition-shadow hover:shadow-md">
@@ -91,6 +89,27 @@ export const AudioCard = ({
         <div className="absolute bottom-2 right-2 rounded bg-background/80 px-2 py-0.5 text-xs font-medium backdrop-blur-sm">
           {formatDuration(audioFile.trimEnd - audioFile.trimStart)}
         </div>
+
+        {/* Modification indicators on cover */}
+        {hasModifications && (
+          <div className="absolute left-2 top-2 flex flex-wrap gap-1">
+            {isTrimmed && (
+              <div className="flex items-center gap-1 rounded bg-amber-500/90 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+                <Scissors className="h-2.5 w-2.5" />
+                <span>Cut</span>
+              </div>
+            )}
+            {isVolumeChanged && (
+              <div className={cn(
+                "flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm",
+                volumeDelta > 0 ? "bg-emerald-500/90" : "bg-sky-500/90"
+              )}>
+                <Volume2 className="h-2.5 w-2.5" />
+                <span>{volumeDelta > 0 ? '+' : ''}{volumeDelta}%</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Content */}
@@ -151,11 +170,11 @@ export const AudioCard = ({
           </DropdownMenu>
         </div>
 
-        {/* Audio Player */}
-        <TooltipProvider delayDuration={200}>
+        {/* Waveform Audio Player with Tooltip */}
+        <TooltipProvider delayDuration={100}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="relative">
+              <div className="cursor-default">
                 <AudioPlayer
                   audioUrl={audioFile.audioUrl}
                   volume={audioFile.volume}
@@ -163,25 +182,28 @@ export const AudioCard = ({
                   trimEnd={audioFile.trimEnd}
                   compact
                 />
-                {(isTrimmed || isVolumeChanged) && (
-                  <div className="absolute right-0 top-0 flex items-center gap-1">
-                    {isTrimmed && (
-                      <span
-                        className={cn(
-                          'h-2 w-2 rounded-full bg-amber-500',
-                          isVolumeChanged && 'opacity-90'
-                        )}
-                      />
-                    )}
-                    {isVolumeChanged && (
-                      <span className="h-2 w-2 rounded-full bg-sky-500" />
-                    )}
-                  </div>
-                )}
               </div>
             </TooltipTrigger>
-            <TooltipContent>
-              <p>{tooltipText}</p>
+            <TooltipContent
+              side="top"
+              className="max-w-xs"
+            >
+              <div className="space-y-1 text-xs">
+                {hasModifications ? (
+                  <>
+                    <p className="font-medium text-foreground">
+                      {tooltipParts.join(' · ')}
+                    </p>
+                    {durationInfo && (
+                      <p className="text-muted-foreground">{durationInfo}</p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">
+                    Duration: {formatDuration(audioFile.duration)} (No modifications)
+                  </p>
+                )}
+              </div>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

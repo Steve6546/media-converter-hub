@@ -39,8 +39,11 @@ const mapApiResponseToAudioFile = (response: AudioFileResponse): AudioFile => ({
   createdAt: new Date(response.createdAt),
   audioUrl: mediaApi.getFileUrl(response.audioUrl),
   volume: response.volume,
+  normalize: (response as any).normalize ?? false,
   trimStart: response.trimStart,
   trimEnd: response.trimEnd,
+  fadeIn: (response as any).fadeIn ?? 0,
+  fadeOut: (response as any).fadeOut ?? 0,
 });
 
 export const MediaProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -149,13 +152,13 @@ export const MediaProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             prev.map((j) =>
               j.id === jobId
                 ? {
-                    ...j,
-                    progress: data.progress,
-                    status: data.status === 'error' ? 'error' : 
-                            data.status === 'completed' ? 'completed' : 
-                            data.status === 'converting' ? 'converting' : 'uploading',
-                    error: data.error,
-                  }
+                  ...j,
+                  progress: data.progress,
+                  status: data.status === 'error' ? 'error' :
+                    data.status === 'completed' ? 'completed' :
+                      data.status === 'converting' ? 'converting' : 'uploading',
+                  error: data.error,
+                }
                 : j
             )
           );
@@ -209,11 +212,11 @@ export const MediaProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       const updatedFile = await mediaApi.uploadCoverImage(id, file);
       const audioFile = mapApiResponseToAudioFile(updatedFile);
-      
+
       setAudioFiles((prev) =>
         prev.map((f) => (f.id === id ? audioFile : f))
       );
-      
+
       toast.success('Cover image updated');
     } catch (error) {
       toast.error('Failed to upload cover image');
@@ -223,14 +226,14 @@ export const MediaProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const applyEdits = useCallback(async (id: string, edits: { volume?: number; trimStart?: number; trimEnd?: number }) => {
     try {
       toast.loading('Applying edits...', { id: 'apply-edits' });
-      
+
       const updatedFile = await mediaApi.applyEdits(id, edits);
       const audioFile = mapApiResponseToAudioFile(updatedFile);
-      
+
       setAudioFiles((prev) =>
         prev.map((f) => (f.id === id ? audioFile : f))
       );
-      
+
       toast.success('Edits applied successfully', { id: 'apply-edits' });
     } catch (error) {
       toast.error('Failed to apply edits', { id: 'apply-edits' });
