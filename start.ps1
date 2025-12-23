@@ -1,16 +1,6 @@
-# ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║              🚀 Smart Media Converter - نظام التشغيل الذكي 🚀                ║
-# ║                    Smart Startup System v1.0                                  ║
-# ╚══════════════════════════════════════════════════════════════════════════════╝
+# Smart Media Converter - Smart Startup System v1.1
 
-# Configuration
 $ErrorActionPreference = "Continue"
-$HOST_COLOR = "Cyan"
-$SUCCESS_COLOR = "Green"
-$WARNING_COLOR = "Yellow"
-$ERROR_COLOR = "Red"
-
-# Store PIDs for cleanup
 $Script:ProcessIds = @()
 $Script:TunnelUrl = ""
 $Script:BackendTunnelUrl = ""
@@ -18,10 +8,9 @@ $Script:BackendTunnelUrl = ""
 function Write-Banner {
     Clear-Host
     Write-Host ""
-    Write-Host "  ╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host "  ║       🎬 Smart Media Converter - Smart Startup System 🎬         ║" -ForegroundColor Cyan
-    Write-Host "  ║                     نظام التشغيل الذكي                           ║" -ForegroundColor Cyan
-    Write-Host "  ╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+    Write-Host "  ======================================================================" -ForegroundColor Cyan
+    Write-Host "       Smart Media Converter - Smart Startup System v1.1               " -ForegroundColor Cyan
+    Write-Host "  ======================================================================" -ForegroundColor Cyan
     Write-Host ""
 }
 
@@ -33,115 +22,86 @@ function Write-Step {
 
 function Write-Success {
     param([string]$Message)
-    Write-Host "  ✅ " -ForegroundColor Green -NoNewline
+    Write-Host "  [OK] " -ForegroundColor Green -NoNewline
     Write-Host $Message -ForegroundColor Green
 }
 
-function Write-Error {
+function Write-Warn {
     param([string]$Message)
-    Write-Host "  ❌ " -ForegroundColor Red -NoNewline
-    Write-Host $Message -ForegroundColor Red
-}
-
-function Write-Warning {
-    param([string]$Message)
-    Write-Host "  ⚠️  " -ForegroundColor Yellow -NoNewline
+    Write-Host "  [!] " -ForegroundColor Yellow -NoNewline
     Write-Host $Message -ForegroundColor Yellow
 }
 
-function Write-Info {
-    param([string]$Message)
-    Write-Host "  ℹ️  " -ForegroundColor Cyan -NoNewline
-    Write-Host $Message -ForegroundColor White
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
 # Step 1: Update Dependencies
-# ════════════════════════════════════════════════════════════════════════════════
 function Update-Dependencies {
     Write-Host ""
-    Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
-    Write-Host "  📦 Step 1: Updating Dependencies | تحديث المكتبات" -ForegroundColor Cyan
-    Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
+    Write-Host "  === Step 1: Updating Dependencies ===" -ForegroundColor Cyan
     Write-Host ""
     
-    # Update yt-dlp
-    Write-Step "1.1" "Updating yt-dlp to latest nightly..."
+    Write-Step "1.1" "Updating yt-dlp..."
     try {
-        $ytdlpOutput = python -m pip install -U --pre yt-dlp 2>&1
+        $null = python -m pip install -U --pre yt-dlp 2>&1
         $ytdlpVersion = python -m yt_dlp --version 2>&1
-        Write-Success "yt-dlp updated to version: $ytdlpVersion"
-    } catch {
-        Write-Warning "Could not update yt-dlp: $($_.Exception.Message)"
+        Write-Success "yt-dlp: $ytdlpVersion"
+    }
+    catch {
+        Write-Warn "Could not update yt-dlp"
     }
     
-    # Update npm packages in root
-    Write-Step "1.2" "Updating Frontend npm packages..."
+    Write-Step "1.2" "Updating Frontend packages..."
     try {
         Push-Location $PSScriptRoot
-        $npmOutput = npm install 2>&1
+        $null = npm install 2>&1
         Write-Success "Frontend packages updated"
         Pop-Location
-    } catch {
-        Write-Warning "Could not update frontend packages"
+    }
+    catch {
+        Write-Warn "Could not update frontend"
         Pop-Location
     }
     
-    # Update npm packages in backend
-    Write-Step "1.3" "Updating Backend npm packages..."
+    Write-Step "1.3" "Updating Backend packages..."
     try {
         Push-Location "$PSScriptRoot\backend"
-        $npmOutput = npm install 2>&1
+        $null = npm install 2>&1
         Write-Success "Backend packages updated"
         Pop-Location
-    } catch {
-        Write-Warning "Could not update backend packages"
+    }
+    catch {
+        Write-Warn "Could not update backend"
         Pop-Location
     }
     
     Write-Host ""
-    return $true
 }
 
-# ════════════════════════════════════════════════════════════════════════════════
 # Step 2: Kill Existing Processes
-# ════════════════════════════════════════════════════════════════════════════════
 function Stop-ExistingProcesses {
-    Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
-    Write-Host "  🧹 Step 2: Cleaning Up | تنظيف العمليات السابقة" -ForegroundColor Cyan
-    Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
+    Write-Host "  === Step 2: Cleaning Up ===" -ForegroundColor Cyan
     Write-Host ""
     
-    Write-Step "2.1" "Stopping any existing node processes..."
+    Write-Step "2.1" "Stopping existing processes..."
     taskkill /F /IM node.exe 2>$null | Out-Null
-    
-    Write-Step "2.2" "Stopping any existing cloudflared processes..."
     taskkill /F /IM cloudflared.exe 2>$null | Out-Null
-    
-    Start-Sleep -Seconds 2
+    Start-Sleep -Seconds 3
     Write-Success "Cleanup complete"
     Write-Host ""
-    return $true
 }
 
-# ════════════════════════════════════════════════════════════════════════════════
-# Step 3: Start Backend Server
-# ════════════════════════════════════════════════════════════════════════════════
+# Step 3: Start Backend
 function Start-BackendServer {
-    Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
-    Write-Host "  🖥️  Step 3: Starting Backend Server | تشغيل الخادم الخلفي" -ForegroundColor Cyan
-    Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
+    Write-Host "  === Step 3: Starting Backend Server ===" -ForegroundColor Cyan
     Write-Host ""
     
     Write-Step "3.1" "Starting Backend on port 3001..."
-    
     $backendPath = "$PSScriptRoot\backend"
-    $backendProcess = Start-Process -FilePath "npm" -ArgumentList "start" -WorkingDirectory $backendPath -PassThru -WindowStyle Hidden
-    $Script:ProcessIds += $backendProcess.Id
     
-    # Wait for backend to be ready
-    Write-Step "3.2" "Waiting for Backend to initialize..."
-    $maxAttempts = 30
+    # Start in a new window so we can see output
+    $proc = Start-Process -FilePath "cmd" -ArgumentList "/c", "cd /d `"$backendPath`" && npm start" -PassThru -WindowStyle Minimized
+    $Script:ProcessIds += $proc.Id
+    
+    Write-Step "3.2" "Waiting for Backend (up to 45 seconds)..."
+    $maxAttempts = 45
     $attempt = 0
     $ready = $false
     
@@ -149,42 +109,36 @@ function Start-BackendServer {
         Start-Sleep -Seconds 1
         try {
             $response = Invoke-WebRequest -Uri "http://localhost:3001/api/health" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
-            if ($response.StatusCode -eq 200) {
-                $ready = $true
-            }
-        } catch {
+            if ($response.StatusCode -eq 200) { $ready = $true }
+        }
+        catch {
             $attempt++
-            Write-Host "." -NoNewline
+            if ($attempt % 5 -eq 0) { Write-Host "." -NoNewline }
         }
     }
     Write-Host ""
     
     if ($ready) {
-        Write-Success "Backend server is running on http://localhost:3001"
-        return $true
-    } else {
-        Write-Warning "Backend may not be fully ready, continuing anyway..."
-        return $true
+        Write-Success "Backend running on http://localhost:3001"
     }
+    else {
+        Write-Warn "Backend may still be starting..."
+    }
+    Write-Host ""
 }
 
-# ════════════════════════════════════════════════════════════════════════════════
-# Step 4: Start Frontend Server
-# ════════════════════════════════════════════════════════════════════════════════
+# Step 4: Start Frontend
 function Start-FrontendServer {
-    Write-Host ""
-    Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
-    Write-Host "  🌐 Step 4: Starting Frontend Server | تشغيل واجهة المستخدم" -ForegroundColor Cyan
-    Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
+    Write-Host "  === Step 4: Starting Frontend Server ===" -ForegroundColor Cyan
     Write-Host ""
     
-    Write-Step "4.1" "Starting Vite dev server on port 8080..."
+    Write-Step "4.1" "Starting Vite on port 8080..."
     
-    $frontendProcess = Start-Process -FilePath "npm" -ArgumentList "run", "dev" -WorkingDirectory $PSScriptRoot -PassThru -WindowStyle Hidden
-    $Script:ProcessIds += $frontendProcess.Id
+    # Start in a new window
+    $proc = Start-Process -FilePath "cmd" -ArgumentList "/c", "cd /d `"$PSScriptRoot`" && npm run dev" -PassThru -WindowStyle Minimized
+    $Script:ProcessIds += $proc.Id
     
-    # Wait for frontend to be ready
-    Write-Step "4.2" "Waiting for Frontend to initialize..."
+    Write-Step "4.2" "Waiting for Frontend (up to 30 seconds)..."
     $maxAttempts = 30
     $attempt = 0
     $ready = $false
@@ -193,45 +147,37 @@ function Start-FrontendServer {
         Start-Sleep -Seconds 1
         try {
             $response = Invoke-WebRequest -Uri "http://localhost:8080" -TimeoutSec 2 -UseBasicParsing -ErrorAction SilentlyContinue
-            if ($response.StatusCode -eq 200) {
-                $ready = $true
-            }
-        } catch {
+            if ($response.StatusCode -eq 200) { $ready = $true }
+        }
+        catch {
             $attempt++
-            Write-Host "." -NoNewline
+            if ($attempt % 5 -eq 0) { Write-Host "." -NoNewline }
         }
     }
     Write-Host ""
     
     if ($ready) {
-        Write-Success "Frontend server is running on http://localhost:8080"
-        return $true
-    } else {
-        Write-Warning "Frontend may not be fully ready, continuing anyway..."
-        return $true
+        Write-Success "Frontend running on http://localhost:8080"
     }
+    else {
+        Write-Warn "Frontend may still be starting..."
+    }
+    Write-Host ""
 }
 
-# ════════════════════════════════════════════════════════════════════════════════
 # Step 5: Start Cloudflare Tunnels
-# ════════════════════════════════════════════════════════════════════════════════
 function Start-CloudflareTunnels {
-    Write-Host ""
-    Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
-    Write-Host "  🌍 Step 5: Starting Cloudflare Tunnels | تشغيل الأنفاق العامة" -ForegroundColor Cyan
-    Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
+    Write-Host "  === Step 5: Starting Cloudflare Tunnels ===" -ForegroundColor Cyan
     Write-Host ""
     
     # Frontend Tunnel
-    Write-Step "5.1" "Creating public tunnel for Frontend (port 8080)..."
-    
+    Write-Step "5.1" "Creating Frontend tunnel (port 8080)..."
     $frontendLogFile = "$env:TEMP\cf_frontend_$(Get-Date -Format 'yyyyMMddHHmmss').log"
-    $frontendTunnelProcess = Start-Process -FilePath "cloudflared" -ArgumentList "tunnel", "--url", "http://localhost:8080" -PassThru -WindowStyle Hidden -RedirectStandardError $frontendLogFile
-    $Script:ProcessIds += $frontendTunnelProcess.Id
+    $proc = Start-Process -FilePath "cloudflared" -ArgumentList "tunnel", "--url", "http://localhost:8080" -PassThru -WindowStyle Hidden -RedirectStandardError $frontendLogFile
+    $Script:ProcessIds += $proc.Id
     
-    # Wait for tunnel URL
-    Write-Step "5.2" "Waiting for Frontend tunnel URL..."
-    $maxAttempts = 30
+    Write-Step "5.2" "Waiting for Frontend URL..."
+    $maxAttempts = 45
     $attempt = 0
     
     while ($attempt -lt $maxAttempts) {
@@ -244,25 +190,24 @@ function Start-CloudflareTunnels {
             }
         }
         $attempt++
-        Write-Host "." -NoNewline
+        if ($attempt % 5 -eq 0) { Write-Host "." -NoNewline }
     }
     Write-Host ""
     
     if ($Script:TunnelUrl) {
-        Write-Success "Frontend Public URL: $($Script:TunnelUrl)"
-    } else {
-        Write-Warning "Could not get Frontend tunnel URL"
+        Write-Success "Frontend URL: $($Script:TunnelUrl)"
+    }
+    else {
+        Write-Warn "Could not get Frontend URL"
     }
     
     # Backend Tunnel
-    Write-Step "5.3" "Creating public tunnel for Backend (port 3001)..."
-    
+    Write-Step "5.3" "Creating Backend tunnel (port 3001)..."
     $backendLogFile = "$env:TEMP\cf_backend_$(Get-Date -Format 'yyyyMMddHHmmss').log"
-    $backendTunnelProcess = Start-Process -FilePath "cloudflared" -ArgumentList "tunnel", "--url", "http://localhost:3001" -PassThru -WindowStyle Hidden -RedirectStandardError $backendLogFile
-    $Script:ProcessIds += $backendTunnelProcess.Id
+    $proc = Start-Process -FilePath "cloudflared" -ArgumentList "tunnel", "--url", "http://localhost:3001" -PassThru -WindowStyle Hidden -RedirectStandardError $backendLogFile
+    $Script:ProcessIds += $proc.Id
     
-    # Wait for tunnel URL
-    Write-Step "5.4" "Waiting for Backend tunnel URL..."
+    Write-Step "5.4" "Waiting for Backend URL..."
     $attempt = 0
     
     while ($attempt -lt $maxAttempts) {
@@ -275,78 +220,81 @@ function Start-CloudflareTunnels {
             }
         }
         $attempt++
-        Write-Host "." -NoNewline
+        if ($attempt % 5 -eq 0) { Write-Host "." -NoNewline }
     }
     Write-Host ""
     
     if ($Script:BackendTunnelUrl) {
-        Write-Success "Backend Public URL: $($Script:BackendTunnelUrl)"
-    } else {
-        Write-Warning "Could not get Backend tunnel URL"
+        Write-Success "Backend URL: $($Script:BackendTunnelUrl)"
+        
+        # Inject config into public/api-config.js
+        Write-Step "5.5" "Injecting API configuration..."
+        $configPath = "$PSScriptRoot\public\api-config.js"
+        $timestamp = [DateTimeOffset]::Now.ToUnixTimeMilliseconds()
+        $configContent = @"
+/**
+ * Runtime API Configuration
+ * Auto-generated by start.ps1 - DO NOT EDIT MANUALLY
+ * Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+ */
+window.__API_CONFIG__ = {
+  backendUrl: '$($Script:BackendTunnelUrl)',
+  frontendUrl: '$($Script:TunnelUrl)',
+  timestamp: $timestamp
+};
+"@
+        Set-Content -Path $configPath -Value $configContent -Encoding UTF8
+        Write-Success "API config injected successfully"
     }
-    
+    else {
+        Write-Warn "Could not get Backend URL"
+    }
     Write-Host ""
-    return $true
 }
 
-# ════════════════════════════════════════════════════════════════════════════════
-# Step 6: Health Check and Final Report
-# ════════════════════════════════════════════════════════════════════════════════
+# Step 6: Health Check
 function Show-HealthReport {
+    Write-Host "  === Step 6: Health Check ===" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
-    Write-Host "  📊 Step 6: Health Check | فحص الحالة النهائية" -ForegroundColor Cyan
-    Write-Host "  ════════════════════════════════════════════════════════════════" -ForegroundColor DarkCyan
-    Write-Host ""
+    
+    # Give servers a bit more time
+    Start-Sleep -Seconds 3
     
     $allHealthy = $true
     
-    # Check Backend
-    Write-Step "6.1" "Checking Backend health..."
+    Write-Step "6.1" "Checking Backend..."
     try {
-        $response = Invoke-WebRequest -Uri "http://localhost:3001/api/health" -TimeoutSec 5 -UseBasicParsing
-        Write-Success "Backend: ✅ Healthy (Port 3001)"
-    } catch {
-        Write-Error "Backend: ❌ Not responding"
+        $response = Invoke-WebRequest -Uri "http://localhost:3001/api/health" -TimeoutSec 10 -UseBasicParsing
+        Write-Success "Backend: OK (Port 3001)"
+    }
+    catch {
+        Write-Host "  [X] Backend: NOT responding" -ForegroundColor Red
         $allHealthy = $false
     }
     
-    # Check Frontend
-    Write-Step "6.2" "Checking Frontend health..."
+    Write-Step "6.2" "Checking Frontend..."
     try {
-        $response = Invoke-WebRequest -Uri "http://localhost:8080" -TimeoutSec 5 -UseBasicParsing
-        Write-Success "Frontend: ✅ Healthy (Port 8080)"
-    } catch {
-        Write-Error "Frontend: ❌ Not responding"
+        $response = Invoke-WebRequest -Uri "http://localhost:8080" -TimeoutSec 10 -UseBasicParsing
+        Write-Success "Frontend: OK (Port 8080)"
+    }
+    catch {
+        Write-Host "  [X] Frontend: NOT responding" -ForegroundColor Red
         $allHealthy = $false
     }
     
-    # Check Tunnels
-    Write-Step "6.3" "Checking Tunnel status..."
-    if ($Script:TunnelUrl) {
-        Write-Success "Frontend Tunnel: ✅ Active"
-    } else {
-        Write-Warning "Frontend Tunnel: ⚠️ URL not captured"
-    }
-    
-    if ($Script:BackendTunnelUrl) {
-        Write-Success "Backend Tunnel: ✅ Active"
-    } else {
-        Write-Warning "Backend Tunnel: ⚠️ URL not captured"
-    }
-    
-    # Check yt-dlp
-    Write-Step "6.4" "Checking yt-dlp..."
+    Write-Step "6.3" "Checking yt-dlp..."
     try {
         $ytdlpVersion = python -m yt_dlp --version 2>&1
-        Write-Success "yt-dlp: ✅ Version $ytdlpVersion"
-    } catch {
-        Write-Warning "yt-dlp: ⚠️ Not available"
+        Write-Success "yt-dlp: $ytdlpVersion"
+    }
+    catch {
+        Write-Warn "yt-dlp: Not available"
     }
     
     return $allHealthy
 }
 
+# Final Report
 function Show-FinalReport {
     param([bool]$AllHealthy)
     
@@ -354,92 +302,70 @@ function Show-FinalReport {
     Write-Host ""
     
     if ($AllHealthy) {
-        Write-Host "  ╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Green
-        Write-Host "  ║                                                                  ║" -ForegroundColor Green
-        Write-Host "  ║   ✅ النظام يعمل بنجاح، السيرفر والموقع نشطان، لا توجد مشاكل   ║" -ForegroundColor Green
-        Write-Host "  ║   ✅ System running successfully - No issues detected!           ║" -ForegroundColor Green
-        Write-Host "  ║                                                                  ║" -ForegroundColor Green
-        Write-Host "  ╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Green
-    } else {
-        Write-Host "  ╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
-        Write-Host "  ║   ⚠️ System started with some warnings - Check logs above       ║" -ForegroundColor Yellow
-        Write-Host "  ╚══════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
+        Write-Host "  ======================================================================" -ForegroundColor Green
+        Write-Host "     SYSTEM RUNNING SUCCESSFULLY - NO ISSUES DETECTED!                 " -ForegroundColor Green
+        Write-Host "  ======================================================================" -ForegroundColor Green
+    }
+    else {
+        Write-Host "  ======================================================================" -ForegroundColor Yellow
+        Write-Host "     System started - Some services may still be initializing          " -ForegroundColor Yellow
+        Write-Host "  ======================================================================" -ForegroundColor Yellow
     }
     
     Write-Host ""
-    Write-Host "  ┌──────────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
-    Write-Host "  │                    🔗 الروابط | Links                            │" -ForegroundColor Cyan
-    Write-Host "  ├──────────────────────────────────────────────────────────────────┤" -ForegroundColor Cyan
-    Write-Host "  │  Local Frontend:  " -ForegroundColor Cyan -NoNewline
-    Write-Host "http://localhost:8080                         " -ForegroundColor White -NoNewline
-    Write-Host "│" -ForegroundColor Cyan
-    Write-Host "  │  Local Backend:   " -ForegroundColor Cyan -NoNewline
-    Write-Host "http://localhost:3001/api/health              " -ForegroundColor White -NoNewline
-    Write-Host "│" -ForegroundColor Cyan
-    Write-Host "  ├──────────────────────────────────────────────────────────────────┤" -ForegroundColor Cyan
+    Write-Host "  +--------------------------------------------------------------------+" -ForegroundColor Cyan
+    Write-Host "  |                         LINKS                                      |" -ForegroundColor Cyan
+    Write-Host "  +--------------------------------------------------------------------+" -ForegroundColor Cyan
+    Write-Host "  |  Local Frontend:  http://localhost:8080                            |" -ForegroundColor White
+    Write-Host "  |  Local Backend:   http://localhost:3001/api/health                 |" -ForegroundColor White
+    Write-Host "  +--------------------------------------------------------------------+" -ForegroundColor Cyan
     
     if ($Script:TunnelUrl) {
-        Write-Host "  │  🌍 Public Site:  " -ForegroundColor Cyan -NoNewline
-        $paddedUrl = $Script:TunnelUrl.PadRight(47)
-        Write-Host "$paddedUrl" -ForegroundColor Green -NoNewline
-        Write-Host "│" -ForegroundColor Cyan
+        Write-Host "  |  PUBLIC SITE:    $($Script:TunnelUrl)" -ForegroundColor Green
     }
-    
     if ($Script:BackendTunnelUrl) {
-        Write-Host "  │  🌍 Public API:   " -ForegroundColor Cyan -NoNewline
-        $paddedUrl = $Script:BackendTunnelUrl.PadRight(47)
-        Write-Host "$paddedUrl" -ForegroundColor Green -NoNewline
-        Write-Host "│" -ForegroundColor Cyan
+        Write-Host "  |  PUBLIC API:     $($Script:BackendTunnelUrl)" -ForegroundColor Green
     }
     
-    Write-Host "  └──────────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+    Write-Host "  +--------------------------------------------------------------------+" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  💡 Press Ctrl+C to stop all services | اضغط Ctrl+C للإيقاف" -ForegroundColor DarkGray
+    Write-Host "  Services are running in minimized windows." -ForegroundColor DarkGray
+    Write-Host "  Close this window or press Ctrl+C to stop all services." -ForegroundColor DarkGray
     Write-Host ""
 }
 
-# ════════════════════════════════════════════════════════════════════════════════
-# Cleanup Handler
-# ════════════════════════════════════════════════════════════════════════════════
+# Cleanup - Fixed: use $processId instead of $pid (reserved)
 function Stop-AllServices {
     Write-Host ""
-    Write-Host "  🛑 Stopping all services..." -ForegroundColor Yellow
+    Write-Host "  Stopping all services..." -ForegroundColor Yellow
     
-    foreach ($pid in $Script:ProcessIds) {
-        try {
-            Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
-        } catch {}
+    foreach ($processId in $Script:ProcessIds) {
+        try { Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue } catch {}
     }
     
     taskkill /F /IM node.exe 2>$null | Out-Null
     taskkill /F /IM cloudflared.exe 2>$null | Out-Null
     
-    Write-Host "  ✅ All services stopped. Goodbye! | تم الإيقاف. مع السلامة!" -ForegroundColor Green
+    Write-Host "  All services stopped. Goodbye!" -ForegroundColor Green
     Write-Host ""
 }
 
-# Register cleanup on Ctrl+C
-Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action { Stop-AllServices } | Out-Null
-
-# ════════════════════════════════════════════════════════════════════════════════
-# Main Execution
-# ════════════════════════════════════════════════════════════════════════════════
+# Main
 try {
     Write-Banner
-    
-    $step1 = Update-Dependencies
-    $step2 = Stop-ExistingProcesses
-    $step3 = Start-BackendServer
-    $step4 = Start-FrontendServer
-    $step5 = Start-CloudflareTunnels
+    Update-Dependencies
+    Stop-ExistingProcesses
+    Start-BackendServer
+    Start-FrontendServer
+    Start-CloudflareTunnels
     $allHealthy = Show-HealthReport
-    
     Show-FinalReport -AllHealthy $allHealthy
     
-    # Keep script running
-    Write-Host "  📡 System is running. Press any key to stop..." -ForegroundColor Cyan
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    # Keep running - wait for user to close window or Ctrl+C
+    Write-Host "  Waiting... (Press Enter to stop services)" -ForegroundColor Cyan
+    Read-Host
     
-} finally {
+}
+finally {
     Stop-AllServices
 }

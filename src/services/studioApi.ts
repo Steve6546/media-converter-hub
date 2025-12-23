@@ -1,4 +1,6 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { getApiBaseUrl } from '@/lib/apiConfig';
+
+const API_BASE_URL = getApiBaseUrl();
 
 export interface StudioJobResponse {
   jobId: string;

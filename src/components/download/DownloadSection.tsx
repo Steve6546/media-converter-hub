@@ -87,8 +87,10 @@ interface DownloadProgress {
     downloadUrl: string | null;
     error: string | null;
 }
+import { getApiBaseUrl, getApiFileUrl, isBackendConfigured } from '@/lib/apiConfig';
 
-const API_BASE = 'http://localhost:3001';
+// Dynamic API base URL - auto-detects local vs public access
+const API_BASE = getApiBaseUrl();
 
 const formatNumber = (num: number | null | undefined): string => {
     if (!num) return '—';
