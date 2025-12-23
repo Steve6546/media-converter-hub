@@ -19,8 +19,10 @@ const {
 const { probeVideo } = require('./studio/probe');
 const {
   checkYtDlpInstalled,
+  checkGalleryDlInstalled,
   analyzeUrl,
   downloadMedia,
+  downloadImage,
   parseProgress,
   MEDIA_OUTPUT_DIR,
 } = require('./media-downloader');

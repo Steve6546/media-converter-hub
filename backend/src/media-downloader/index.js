@@ -72,40 +72,172 @@ const checkYtDlpInstalled = async () => {
 };
 
 /**
+ * Gallery-dl integration for image platforms
+ */
+const GALLERY_DL_CMD = process.platform === 'win32' ? 'python' : 'gallery-dl';
+const GALLERY_DL_ARGS = process.platform === 'win32' ? ['-m', 'gallery_dl'] : [];
+
+const executeGalleryDl = (args, options = {}) => {
+    return new Promise((resolve, reject) => {
+        const gallerydl = spawn(GALLERY_DL_CMD, [...GALLERY_DL_ARGS, ...args], {
+            windowsHide: true,
+            ...options,
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        gallerydl.stdout.on('data', (data) => {
+            stdout += data.toString();
+        });
+
+        gallerydl.stderr.on('data', (data) => {
+            stderr += data.toString();
+        });
+
+        gallerydl.on('close', (code) => {
+            if (code === 0) {
+                resolve(stdout);
+            } else {
+                reject(new Error(stderr || `gallery-dl exited with code ${code}`));
+            }
+        });
+
+        gallerydl.on('error', (err) => {
+            reject(new Error(`Failed to start gallery-dl: ${err.message}. Make sure gallery-dl is installed.`));
+        });
+    });
+};
+
+const checkGalleryDlInstalled = async () => {
+    try {
+        const version = await executeGalleryDl(['--version']);
+        return { installed: true, version: version.trim() };
+    } catch (error) {
+        return { installed: false, error: error.message };
+    }
+};
+
+/**
+ * Analyze URL with gallery-dl (for images)
+ * Uses -g flag to get direct image URLs
+ */
+const analyzeWithGalleryDl = async (url, platform) => {
+    try {
+        // Use -g to get direct URLs (simpler than parsing -j JSON)
+        const output = await executeGalleryDl([
+            '-g', // Get URLs only
+            url,
+        ]);
+
+        const imageUrls = output.trim().split('\n').filter(line => line.startsWith('http'));
+
+        if (imageUrls.length === 0) {
+            throw new Error('No images found');
+        }
+
+        // Get the first image as thumbnail
+        const thumbnailUrl = imageUrls[0];
+
+        // Extract filename from URL
+        const getFilename = (imageUrl) => {
+            try {
+                const urlPath = new URL(imageUrl).pathname;
+                return urlPath.split('/').pop() || 'image.jpg';
+            } catch {
+                return 'image.jpg';
+            }
+        };
+
+        return {
+            success: true,
+            isImage: true,
+            metadata: {
+                title: `${platform.name} Image`,
+                description: null,
+                platform: platform.name,
+                platformIcon: platform.icon,
+                platformColor: platform.color,
+                uploader: null,
+                thumbnail: thumbnailUrl,
+                duration: null,
+                duration_string: null,
+                view_count: null,
+                like_count: null,
+                upload_date: null,
+                extractor: 'gallery-dl',
+                webpage_url: url,
+            },
+            download_options: {
+                video: [],
+                audio: [],
+                images: imageUrls.map((imageUrl, index) => {
+                    const filename = getFilename(imageUrl);
+                    const ext = filename.split('.').pop()?.split('?')[0] || 'jpg';
+                    return {
+                        format_id: `image_${index}`,
+                        quality: 'Original',
+                        url: imageUrl,
+                        filename: filename,
+                        ext: ext,
+                        size_mb: null,
+                    };
+                }),
+            },
+        };
+    } catch (error) {
+        throw new Error(`Failed to analyze image URL: ${error.message}`);
+    }
+};
+
+
+/**
  * Detect platform from URL
  */
 const detectPlatform = (url) => {
     const urlLower = url.toLowerCase();
 
     if (urlLower.includes('youtube.com') || urlLower.includes('youtu.be')) {
-        return { name: 'YouTube', icon: 'youtube', color: '#FF0000' };
+        return { name: 'YouTube', icon: 'youtube', color: '#FF0000', isImagePlatform: false };
     }
     if (urlLower.includes('tiktok.com')) {
-        return { name: 'TikTok', icon: 'tiktok', color: '#000000' };
+        return { name: 'TikTok', icon: 'tiktok', color: '#000000', isImagePlatform: false };
     }
     if (urlLower.includes('instagram.com')) {
-        return { name: 'Instagram', icon: 'instagram', color: '#E4405F' };
+        return { name: 'Instagram', icon: 'instagram', color: '#E4405F', isImagePlatform: true };
     }
     if (urlLower.includes('twitter.com') || urlLower.includes('x.com')) {
-        return { name: 'X (Twitter)', icon: 'twitter', color: '#1DA1F2' };
+        return { name: 'X (Twitter)', icon: 'twitter', color: '#1DA1F2', isImagePlatform: true };
     }
     if (urlLower.includes('facebook.com') || urlLower.includes('fb.watch')) {
-        return { name: 'Facebook', icon: 'facebook', color: '#1877F2' };
+        return { name: 'Facebook', icon: 'facebook', color: '#1877F2', isImagePlatform: false };
     }
     if (urlLower.includes('vimeo.com')) {
-        return { name: 'Vimeo', icon: 'vimeo', color: '#1AB7EA' };
+        return { name: 'Vimeo', icon: 'vimeo', color: '#1AB7EA', isImagePlatform: false };
     }
     if (urlLower.includes('twitch.tv')) {
-        return { name: 'Twitch', icon: 'twitch', color: '#9146FF' };
+        return { name: 'Twitch', icon: 'twitch', color: '#9146FF', isImagePlatform: false };
     }
     if (urlLower.includes('reddit.com')) {
-        return { name: 'Reddit', icon: 'reddit', color: '#FF4500' };
+        return { name: 'Reddit', icon: 'reddit', color: '#FF4500', isImagePlatform: true };
     }
     if (urlLower.includes('dailymotion.com')) {
-        return { name: 'Dailymotion', icon: 'video', color: '#0066DC' };
+        return { name: 'Dailymotion', icon: 'video', color: '#0066DC', isImagePlatform: false };
+    }
+    if (urlLower.includes('pinterest.com') || urlLower.includes('pin.it')) {
+        return { name: 'Pinterest', icon: 'image', color: '#E60023', isImagePlatform: true };
+    }
+    if (urlLower.includes('imgur.com')) {
+        return { name: 'Imgur', icon: 'image', color: '#1BB76E', isImagePlatform: true };
+    }
+    if (urlLower.includes('flickr.com')) {
+        return { name: 'Flickr', icon: 'image', color: '#0063DC', isImagePlatform: true };
+    }
+    if (urlLower.includes('deviantart.com')) {
+        return { name: 'DeviantArt', icon: 'image', color: '#05CC47', isImagePlatform: true };
     }
 
-    return { name: 'Unknown', icon: 'link', color: '#6B7280' };
+    return { name: 'Unknown', icon: 'link', color: '#6B7280', isImagePlatform: false };
 };
 
 /**
@@ -246,6 +378,7 @@ const analyzeUrl = async (url) => {
 
         return {
             success: true,
+            isImage: false,
             metadata: {
                 title: info.title || 'Unknown Title',
                 description: info.description ? info.description.substring(0, 500) : null,
@@ -266,9 +399,20 @@ const analyzeUrl = async (url) => {
             download_options: formats,
         };
     } catch (error) {
-        // Parse yt-dlp error messages for better UX
         const errorMsg = error.message.toLowerCase();
 
+        // If yt-dlp says "no video formats", try gallery-dl for images
+        if (errorMsg.includes('no video formats') || platform.isImagePlatform) {
+            try {
+                console.log(`📷 [analyzeUrl] Trying gallery-dl for image platform: ${platform.name}`);
+                return await analyzeWithGalleryDl(url, platform);
+            } catch (galleryError) {
+                // If gallery-dl also fails, throw the original or gallery error
+                throw new Error(`No video or image found. ${galleryError.message}`);
+            }
+        }
+
+        // Parse yt-dlp error messages for better UX
         if (errorMsg.includes('private video') || errorMsg.includes('sign in')) {
             throw new Error('This video is private or requires sign-in');
         }
@@ -378,12 +522,42 @@ const parseProgress = (line) => {
     return null;
 };
 
+/**
+ * Download image using gallery-dl
+ */
+const downloadImage = (url, options = {}) => {
+    const {
+        outputDir = MEDIA_OUTPUT_DIR,
+    } = options;
+
+    const downloadId = uuidv4();
+    const outputTemplate = path.join(outputDir, `${downloadId}.{extension}`);
+
+    const args = [
+        '-d', outputDir,
+        '--filename', `${downloadId}.{extension}`,
+        url,
+    ];
+
+    const process = spawn(GALLERY_DL_CMD, [...GALLERY_DL_ARGS, ...args], { windowsHide: true });
+
+    return {
+        downloadId,
+        process,
+        outputDir,
+        outputTemplate,
+    };
+};
+
 module.exports = {
     checkYtDlpInstalled,
+    checkGalleryDlInstalled,
     validateUrl,
     detectPlatform,
     analyzeUrl,
+    analyzeWithGalleryDl,
     downloadMedia,
+    downloadImage,
     parseProgress,
     MEDIA_OUTPUT_DIR,
 };
