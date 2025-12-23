@@ -25,10 +25,14 @@ const YT_DLP_ARGS = process.platform === 'win32' ? ['-m', 'yt_dlp'] : [];
 
 const executeYtDlp = (args, options = {}) => {
     return new Promise((resolve, reject) => {
-        const ytdlp = spawn(YT_DLP_CMD, [...YT_DLP_ARGS, ...args], {
-            shell: true,
+        // Don't use shell: true to avoid issues with special characters in URLs
+        // The & character in URLs was being interpreted as a shell command separator
+        const spawnOptions = {
+            windowsHide: true,
             ...options,
-        });
+        };
+
+        const ytdlp = spawn(YT_DLP_CMD, [...YT_DLP_ARGS, ...args], spawnOptions);
 
         let stdout = '';
         let stderr = '';
@@ -318,7 +322,7 @@ const downloadMedia = (url, formatId, options = {}) => {
 
     args.push(url);
 
-    const process = spawn(YT_DLP_CMD, [...YT_DLP_ARGS, ...args], { shell: true });
+    const process = spawn(YT_DLP_CMD, [...YT_DLP_ARGS, ...args], { windowsHide: true });
 
     return {
         downloadId,
