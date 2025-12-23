@@ -445,17 +445,27 @@ const parseFormats = (formats) => {
 
 /**
  * Get TikTok-specific extraction arguments
- * TikTok frequently changes their website structure, so we use reliable headers
+ * Uses browser impersonation when available (requires curl_cffi)
  */
 const getTikTokArgs = () => {
     return [
-        // Use mobile user agent - works better with TikTok
-        '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+        // Try browser impersonation (requires curl_cffi)
+        '--impersonate', 'chrome',
+        // Fallback user agent if impersonation not available
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         // Add referer header
         '--referer', 'https://www.tiktok.com/',
         // Add custom headers to look more like a real browser
         '--add-header', 'Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        '--add-header', 'Accept-Language:en-US,en;q=0.9,ar;q=0.8',
+        '--add-header', 'Accept-Language:en-US,en;q=0.9',
+        '--add-header', 'sec-ch-ua:"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        '--add-header', 'sec-ch-ua-mobile:?0',
+        '--add-header', 'sec-ch-ua-platform:"Windows"',
+        '--add-header', 'sec-fetch-dest:document',
+        '--add-header', 'sec-fetch-mode:navigate',
+        '--add-header', 'sec-fetch-site:none',
+        '--add-header', 'sec-fetch-user:?1',
+        '--add-header', 'upgrade-insecure-requests:1',
     ];
 };
 
@@ -669,9 +679,18 @@ const analyzeUrl = async (url) => {
     if (errorMsg.includes('unable to extract')) {
         throw new Error('Unable to extract video data. The website may have changed. Please try updating yt-dlp.');
     }
+    // TikTok IP blocking detection
+    if (errorMsg.includes('ip address is blocked') || errorMsg.includes('blocked from accessing')) {
+        throw new Error('🚫 عنوان IP الخاص بك محظور من قبل TikTok.\n\n' +
+            'Your IP address is blocked by TikTok.\n' +
+            'Solutions:\n' +
+            '• Use a VPN to change your IP address\n' +
+            '• Try again later from a different network\n' +
+            '• The video may be region-restricted');
+    }
     if (errorMsg.includes('marked as broken') || errorMsg.includes('no working app info')) {
         throw new Error('⚠️ دعم هذا الموقع معطل مؤقتاً. يرجى المحاولة لاحقاً أو تحديث yt-dlp.\n\n' +
-            'This site\'s support is temporarily broken. Try: python -m pip install --upgrade yt-dlp');
+            'This site\'s support is temporarily broken. Try: python -m pip install -U --pre yt-dlp');
     }
 
     throw new Error(`Failed to analyze URL: ${lastError?.message || 'Unknown error'}`);
