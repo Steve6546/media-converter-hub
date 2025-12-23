@@ -1,11 +1,14 @@
 /**
  * Media Downloader Module
  * Uses yt-dlp to analyze and download media from various platforms
+ * With fallback mechanisms for platforms with broken extractors (like TikTok)
  */
 
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
+const http = require('http');
 const { v4: uuidv4 } = require('uuid');
 
 // Directory for media downloads
@@ -116,6 +119,93 @@ const checkGalleryDlInstalled = async () => {
     } catch (error) {
         return { installed: false, error: error.message };
     }
+};
+
+/**
+ * TikTok Fallback Scraper
+ * When yt-dlp's TikTok extractor is broken, we try to fetch video info directly
+ */
+const fetchTikTokFallback = async (url) => {
+    return new Promise((resolve, reject) => {
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://www.tiktok.com/',
+        };
+
+        const urlObj = new URL(url);
+        const protocol = urlObj.protocol === 'https:' ? https : http;
+
+        const options = {
+            hostname: urlObj.hostname,
+            path: urlObj.pathname + urlObj.search,
+            method: 'GET',
+            headers: headers,
+        };
+
+        const req = protocol.request(options, (res) => {
+            // Handle redirects
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                fetchTikTokFallback(res.headers.location).then(resolve).catch(reject);
+                return;
+            }
+
+            if (res.statusCode !== 200) {
+                reject(new Error(`TikTok returned status ${res.statusCode}`));
+                return;
+            }
+
+            let data = '';
+            res.on('data', chunk => { data += chunk; });
+            res.on('end', () => {
+                try {
+                    // Try to find SIGI_STATE or __UNIVERSAL_DATA_FOR_REHYDRATION__ JSON
+                    let jsonMatch = data.match(/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([^<]+)<\/script>/);
+                    if (!jsonMatch) {
+                        jsonMatch = data.match(/<script id="SIGI_STATE"[^>]*>([^<]+)<\/script>/);
+                    }
+
+                    if (jsonMatch) {
+                        const jsonData = JSON.parse(jsonMatch[1]);
+                        resolve({ success: true, data: jsonData, html: data });
+                    } else {
+                        // Return HTML for further processing
+                        resolve({ success: false, html: data, reason: 'No JSON data found' });
+                    }
+                } catch (e) {
+                    resolve({ success: false, html: data, reason: e.message });
+                }
+            });
+        });
+
+        req.on('error', (e) => {
+            reject(new Error(`Failed to fetch TikTok page: ${e.message}`));
+        });
+
+        req.setTimeout(15000, () => {
+            req.destroy();
+            reject(new Error('TikTok request timeout'));
+        });
+
+        req.end();
+    });
+};
+
+/**
+ * Extract TikTok video ID from various URL formats
+ */
+const extractTikTokVideoId = (url) => {
+    // Pattern 1: https://www.tiktok.com/@user/video/1234567890
+    const videoPattern = url.match(/\/video\/(\d+)/);
+    if (videoPattern) return { type: 'video', id: videoPattern[1] };
+
+    // Pattern 2: https://www.tiktok.com/music/name-1234567890
+    const musicPattern = url.match(/\/music\/[^-]+-(\d+)/);
+    if (musicPattern) return { type: 'music', id: musicPattern[1] };
+
+    // Pattern 3: Short URLs (vm.tiktok.com, vt.tiktok.com) - need to resolve
+    return { type: 'unknown', id: null };
 };
 
 /**
@@ -354,6 +444,22 @@ const parseFormats = (formats) => {
 };
 
 /**
+ * Get TikTok-specific extraction arguments
+ * TikTok frequently changes their website structure, so we use reliable headers
+ */
+const getTikTokArgs = () => {
+    return [
+        // Use mobile user agent - works better with TikTok
+        '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+        // Add referer header
+        '--referer', 'https://www.tiktok.com/',
+        // Add custom headers to look more like a real browser
+        '--add-header', 'Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        '--add-header', 'Accept-Language:en-US,en;q=0.9,ar;q=0.8',
+    ];
+};
+
+/**
  * Analyze URL and extract media information
  */
 const analyzeUrl = async (url) => {
@@ -362,72 +468,222 @@ const analyzeUrl = async (url) => {
     }
 
     const platform = detectPlatform(url);
+    const isTikTok = platform.name === 'TikTok';
 
-    try {
-        // Use yt-dlp to extract info without downloading
-        const output = await executeYtDlp([
-            '-j', // Output JSON
-            '--no-playlist', // Single video only
-            '--no-warnings',
-            url,
-        ]);
+    // Build base arguments
+    const baseArgs = [
+        '-j', // Output JSON
+        '--no-playlist', // Single video only
+        '--no-warnings',
+    ];
 
-        const info = JSON.parse(output);
-
-        const formats = parseFormats(info.formats);
-
-        return {
-            success: true,
-            isImage: false,
-            metadata: {
-                title: info.title || 'Unknown Title',
-                description: info.description ? info.description.substring(0, 500) : null,
-                platform: platform.name,
-                platformIcon: platform.icon,
-                platformColor: platform.color,
-                uploader: info.uploader || info.channel || null,
-                uploader_url: info.uploader_url || info.channel_url || null,
-                thumbnail: info.thumbnail || null,
-                duration: info.duration || null,
-                duration_string: info.duration_string || null,
-                view_count: info.view_count || null,
-                like_count: info.like_count || null,
-                upload_date: info.upload_date || null,
-                extractor: info.extractor || null,
-                webpage_url: info.webpage_url || url,
-            },
-            download_options: formats,
-        };
-    } catch (error) {
-        const errorMsg = error.message.toLowerCase();
-
-        // If yt-dlp says "no video formats", try gallery-dl for images
-        if (errorMsg.includes('no video formats') || platform.isImagePlatform) {
-            try {
-                console.log(`📷 [analyzeUrl] Trying gallery-dl for image platform: ${platform.name}`);
-                return await analyzeWithGalleryDl(url, platform);
-            } catch (galleryError) {
-                // If gallery-dl also fails, throw the original or gallery error
-                throw new Error(`No video or image found. ${galleryError.message}`);
-            }
-        }
-
-        // Parse yt-dlp error messages for better UX
-        if (errorMsg.includes('private video') || errorMsg.includes('sign in')) {
-            throw new Error('This video is private or requires sign-in');
-        }
-        if (errorMsg.includes('video unavailable') || errorMsg.includes('not available')) {
-            throw new Error('This video is not available');
-        }
-        if (errorMsg.includes('unsupported url')) {
-            throw new Error('This URL is not supported');
-        }
-        if (errorMsg.includes('failed to start yt-dlp')) {
-            throw new Error('yt-dlp is not installed. Please install it to use this feature.');
-        }
-
-        throw new Error(`Failed to analyze URL: ${error.message}`);
+    // Add platform-specific arguments
+    if (isTikTok) {
+        baseArgs.push(...getTikTokArgs());
     }
+
+    // Multiple extraction strategies - try each until one succeeds
+    const strategies = [
+        // Strategy 1: Enhanced headers with TikTok API extraction
+        [...baseArgs, url],
+        // Strategy 2: Simpler approach with just user-agent (no extractor args that might fail)
+        ...(isTikTok ? [[
+            '-j',
+            '--no-playlist',
+            '--no-warnings',
+            '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            '--referer', 'https://www.tiktok.com/',
+            url,
+        ]] : []),
+        // Strategy 3: Try with browser cookies if available (Chrome)
+        ...(isTikTok ? [[
+            '-j',
+            '--no-playlist',
+            '--no-warnings',
+            '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            '--cookies-from-browser', 'chrome',
+            url,
+        ]] : []),
+        // Strategy 4: Minimal args - let yt-dlp figure it out
+        ...(isTikTok ? [[
+            '-j',
+            '--no-playlist',
+            url,
+        ]] : []),
+    ];
+
+    let lastError = null;
+
+    for (let i = 0; i < strategies.length; i++) {
+        const args = strategies[i];
+        if (!args || args.length === 0) continue;
+
+        try {
+            console.log(`🔍 [analyzeUrl] Strategy ${i + 1}/${strategies.length} for ${platform.name}...`);
+            const output = await executeYtDlp(args);
+
+            const info = JSON.parse(output);
+
+            const formats = parseFormats(info.formats);
+
+            return {
+                success: true,
+                isImage: false,
+                metadata: {
+                    title: info.title || 'Unknown Title',
+                    description: info.description ? info.description.substring(0, 500) : null,
+                    platform: platform.name,
+                    platformIcon: platform.icon,
+                    platformColor: platform.color,
+                    uploader: info.uploader || info.channel || null,
+                    uploader_url: info.uploader_url || info.channel_url || null,
+                    thumbnail: info.thumbnail || null,
+                    duration: info.duration || null,
+                    duration_string: info.duration_string || null,
+                    view_count: info.view_count || null,
+                    like_count: info.like_count || null,
+                    upload_date: info.upload_date || null,
+                    extractor: info.extractor || null,
+                    webpage_url: info.webpage_url || url,
+                },
+                download_options: formats,
+            };
+        } catch (strategyError) {
+            console.log(`⚠️ [analyzeUrl] Strategy ${i + 1} failed: ${strategyError.message}`);
+            lastError = strategyError;
+            // Continue to next strategy
+        }
+    }
+
+    // All strategies failed
+    const errorMsg = lastError?.message?.toLowerCase() || '';
+
+    // If TikTok extractor is marked as broken, try our fallback scraper
+    if (isTikTok && (errorMsg.includes('marked as broken') || errorMsg.includes('no working app info'))) {
+        console.log(`🔄 [analyzeUrl] TikTok yt-dlp extractor is broken, trying fallback scraper...`);
+
+        // Check URL type
+        const urlInfo = extractTikTokVideoId(url);
+
+        if (urlInfo.type === 'music') {
+            throw new Error('❌ روابط الموسيقى/الأصوات غير مدعومة حالياً. يرجى استخدام رابط فيديو TikTok مباشر.\n\n' +
+                'Music/Sound URLs are not supported. Please use a direct TikTok video URL instead.\n' +
+                'Example: https://www.tiktok.com/@username/video/1234567890');
+        }
+
+        try {
+            const fallbackResult = await fetchTikTokFallback(url);
+
+            if (fallbackResult.success && fallbackResult.data) {
+                // Try to extract video info from the JSON data
+                const data = fallbackResult.data;
+                let videoInfo = null;
+
+                // Navigate TikTok's complex JSON structure
+                if (data.__DEFAULT_SCOPE__?.['webapp.video-detail']?.itemInfo?.itemStruct) {
+                    videoInfo = data.__DEFAULT_SCOPE__['webapp.video-detail'].itemInfo.itemStruct;
+                } else if (data.ItemModule) {
+                    const videoId = Object.keys(data.ItemModule)[0];
+                    videoInfo = data.ItemModule[videoId];
+                }
+
+                if (videoInfo) {
+                    const video = videoInfo.video || {};
+                    const author = videoInfo.author || {};
+
+                    return {
+                        success: true,
+                        isImage: false,
+                        metadata: {
+                            title: videoInfo.desc || 'TikTok Video',
+                            description: videoInfo.desc || null,
+                            platform: platform.name,
+                            platformIcon: platform.icon,
+                            platformColor: platform.color,
+                            uploader: author.uniqueId || author.nickname || null,
+                            uploader_url: author.uniqueId ? `https://www.tiktok.com/@${author.uniqueId}` : null,
+                            thumbnail: video.cover || video.dynamicCover || null,
+                            duration: video.duration || null,
+                            duration_string: video.duration ? formatDuration(video.duration) : null,
+                            view_count: videoInfo.stats?.playCount || null,
+                            like_count: videoInfo.stats?.diggCount || null,
+                            upload_date: videoInfo.createTime ? new Date(videoInfo.createTime * 1000).toISOString().split('T')[0].replace(/-/g, '') : null,
+                            extractor: 'tiktok-fallback',
+                            webpage_url: url,
+                        },
+                        download_options: {
+                            video: [{
+                                format_id: 'tiktok-fallback',
+                                quality: video.height ? `${video.height}p` : 'Original',
+                                resolution: video.width && video.height ? `${video.width}x${video.height}` : null,
+                                fps: 30,
+                                size_mb: null,
+                                ext: 'mp4',
+                                has_audio: true,
+                                downloadUrl: video.playAddr || video.downloadAddr || null,
+                            }],
+                            audio: [],
+                        },
+                    };
+                }
+            }
+
+            // Fallback didn't work, throw helpful error
+            throw new Error('⚠️ دعم TikTok معطل مؤقتاً في yt-dlp.\n\n' +
+                'TikTok support is temporarily broken in yt-dlp.\n' +
+                'Please try updating yt-dlp: python -m pip install --upgrade yt-dlp\n' +
+                'Or wait for a fix from the yt-dlp team.');
+
+        } catch (fallbackError) {
+            if (fallbackError.message.includes('روابط الموسيقى') || fallbackError.message.includes('معطل مؤقتاً')) {
+                throw fallbackError;
+            }
+            console.log(`❌ [analyzeUrl] TikTok fallback failed: ${fallbackError.message}`);
+        }
+    }
+
+    // If yt-dlp says "no video formats", try gallery-dl for images
+    if (errorMsg.includes('no video formats') || platform.isImagePlatform) {
+        try {
+            console.log(`📷 [analyzeUrl] Trying gallery-dl for image platform: ${platform.name}`);
+            return await analyzeWithGalleryDl(url, platform);
+        } catch (galleryError) {
+            // If gallery-dl also fails, throw the original or gallery error
+            throw new Error(`No video or image found. ${galleryError.message}`);
+        }
+    }
+
+    // Parse yt-dlp error messages for better UX
+    if (errorMsg.includes('private video') || errorMsg.includes('sign in')) {
+        throw new Error('This video is private or requires sign-in');
+    }
+    if (errorMsg.includes('video unavailable') || errorMsg.includes('not available')) {
+        throw new Error('This video is not available');
+    }
+    if (errorMsg.includes('unsupported url')) {
+        throw new Error('This URL is not supported');
+    }
+    if (errorMsg.includes('failed to start yt-dlp')) {
+        throw new Error('yt-dlp is not installed. Please install it to use this feature.');
+    }
+    if (errorMsg.includes('unable to extract')) {
+        throw new Error('Unable to extract video data. The website may have changed. Please try updating yt-dlp.');
+    }
+    if (errorMsg.includes('marked as broken') || errorMsg.includes('no working app info')) {
+        throw new Error('⚠️ دعم هذا الموقع معطل مؤقتاً. يرجى المحاولة لاحقاً أو تحديث yt-dlp.\n\n' +
+            'This site\'s support is temporarily broken. Try: python -m pip install --upgrade yt-dlp');
+    }
+
+    throw new Error(`Failed to analyze URL: ${lastError?.message || 'Unknown error'}`);
+};
+
+/**
+ * Format duration in seconds to string
+ */
+const formatDuration = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
 /**
@@ -446,12 +702,21 @@ const downloadMedia = (url, formatId, options = {}) => {
         ? path.join(outputDir, filename)
         : path.join(outputDir, `${downloadId}.%(ext)s`);
 
+    // Detect platform for specific arguments
+    const platform = detectPlatform(url);
+    const isTikTok = platform.name === 'TikTok';
+
     const args = [
         '--newline', // Progress on new lines
         '-o', outputTemplate,
         '--no-playlist',
         '--no-warnings',
     ];
+
+    // Add TikTok-specific arguments for downloads too
+    if (isTikTok) {
+        args.push(...getTikTokArgs());
+    }
 
     if (audioOnly) {
         args.push('-x'); // Extract audio

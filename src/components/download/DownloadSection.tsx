@@ -28,6 +28,7 @@ import {
     FileAudio,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { PlatformIcon, getPlatformConfig, PLATFORM_CONFIG } from '@/components/icons/BrandIcons';
 
 interface MediaMetadata {
     title: string;
@@ -105,18 +106,7 @@ const formatDuration = (seconds: number | null | undefined): string => {
     return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
-const getPlatformIcon = (platform: string) => {
-    const p = platform.toLowerCase();
-    if (p.includes('youtube')) return '🎬';
-    if (p.includes('tiktok')) return '🎵';
-    if (p.includes('instagram')) return '📷';
-    if (p.includes('twitter') || p.includes('x')) return '🐦';
-    if (p.includes('facebook')) return '📘';
-    if (p.includes('vimeo')) return '🎥';
-    if (p.includes('twitch')) return '🎮';
-    if (p.includes('reddit')) return '🤖';
-    return '🔗';
-};
+// Platform icons are now handled by BrandIcons component
 
 export const DownloadSection = () => {
     const [url, setUrl] = useState('');
@@ -304,13 +294,21 @@ export const DownloadSection = () => {
                         </Button>
                     </div>
 
-                    {/* Platform badges */}
+                    {/* Platform badges with brand icons */}
                     <div className="flex flex-wrap gap-2 mt-4 justify-center">
-                        {['YouTube', 'TikTok', 'Instagram', 'Twitter', 'Facebook', 'Vimeo'].map((platform) => (
-                            <Badge key={platform} variant="secondary" className="text-xs">
-                                {getPlatformIcon(platform)} {platform}
-                            </Badge>
-                        ))}
+                        {['YouTube', 'TikTok', 'Instagram', 'Twitter', 'Facebook', 'Vimeo'].map((platform) => {
+                            const config = getPlatformConfig(platform);
+                            return (
+                                <Badge
+                                    key={platform}
+                                    variant="secondary"
+                                    className="text-xs flex items-center gap-1.5 px-3 py-1"
+                                >
+                                    <PlatformIcon platform={platform} size={14} />
+                                    {platform}
+                                </Badge>
+                            );
+                        })}
                         <Badge variant="outline" className="text-xs">
                             +100 more
                         </Badge>
@@ -352,10 +350,11 @@ export const DownloadSection = () => {
                                 </Badge>
                             )}
                             <Badge
-                                className="absolute top-2 left-2"
+                                className="absolute top-2 left-2 flex items-center gap-1.5"
                                 style={{ backgroundColor: mediaInfo.metadata.platformColor }}
                             >
-                                {getPlatformIcon(mediaInfo.metadata.platform)} {mediaInfo.metadata.platform}
+                                <PlatformIcon platform={mediaInfo.metadata.platform} size={14} className="text-white" />
+                                {mediaInfo.metadata.platform}
                             </Badge>
                         </div>
 
@@ -429,8 +428,8 @@ export const DownloadSection = () => {
                                                 <div
                                                     key={format.format_id}
                                                     className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all ${selectedFormat === format.format_id
-                                                            ? 'border-primary bg-primary/5'
-                                                            : 'border-border hover:border-primary/50'
+                                                        ? 'border-primary bg-primary/5'
+                                                        : 'border-border hover:border-primary/50'
                                                         }`}
                                                     onClick={() => setSelectedFormat(format.format_id)}
                                                 >
