@@ -93,11 +93,11 @@ function Start-BackendServer {
     Write-Host "  === Step 3: Starting Backend Server ===" -ForegroundColor Cyan
     Write-Host ""
     
-    Write-Step "3.1" "Starting Backend on port 3001..."
+    Write-Step "3.1" "Starting Backend on port 3001 (with hot reload)..."
     $backendPath = "$PSScriptRoot\..\backend"
     
-    # Start in a new window so we can see output
-    $proc = Start-Process -FilePath "cmd" -ArgumentList "/c", "cd /d `"$backendPath`" && npm start" -PassThru -WindowStyle Minimized
+    # Start with nodemon for hot reload - changes to code will auto-restart
+    $proc = Start-Process -FilePath "cmd" -ArgumentList "/c", "cd /d `"$backendPath`" && npm run dev" -PassThru -WindowStyle Minimized
     $Script:ProcessIds += $proc.Id
     
     Write-Step "3.2" "Waiting for Backend (up to 45 seconds)..."

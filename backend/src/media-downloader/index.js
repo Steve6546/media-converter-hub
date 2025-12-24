@@ -742,11 +742,18 @@ const downloadMedia = (url, formatId, options = {}) => {
         args.push('--audio-format', 'mp3');
         args.push('--audio-quality', '0'); // Best quality
     } else if (formatId) {
-        // Try to get format with audio, fallback to merging best audio
-        args.push('-f', `${formatId}+bestaudio/best[height<=1080]/best`);
+        // More flexible format selection with multiple fallbacks
+        // This prevents failures when specific format+audio merge doesn't work
+        args.push('-f', `${formatId}+bestaudio[ext=m4a]/${formatId}+bestaudio/${formatId}/best[height<=1080]/best`);
+        args.push('--merge-output-format', 'mp4'); // Ensure consistent output format
     } else {
-        args.push('-f', 'best[height<=1080]/best');
+        args.push('-f', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best');
+        args.push('--merge-output-format', 'mp4');
     }
+
+    // Add retry logic for network issues
+    args.push('--retries', '3');
+    args.push('--fragment-retries', '3');
 
     args.push(url);
 

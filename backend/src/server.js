@@ -1037,6 +1037,139 @@ app.get('/api/media/downloads', (req, res) => {
   res.json(downloads);
 });
 
+// Rate limiting for streaming downloads
+const activeStreams = new Map();
+const MAX_CONCURRENT_STREAMS = 5;
+
+// API: Direct Streaming Download (No Server Storage)
+// This streams yt-dlp output directly to the client
+app.get('/api/media/stream', async (req, res) => {
+  const { url, format_id, audio_only, title } = req.query;
+
+  if (!url) {
+    return res.status(400).json({ error: 'URL is required' });
+  }
+
+  // Check concurrent stream limit
+  if (activeStreams.size >= MAX_CONCURRENT_STREAMS) {
+    return res.status(429).json({ error: 'Too many concurrent downloads. Please try again later.' });
+  }
+
+  const streamId = uuidv4();
+  console.log(`📥 [/api/media/stream] Starting stream: ${streamId}`);
+
+  // Sanitize filename
+  const sanitizeFilename = (name) => {
+    return (name || 'download')
+      .replace(/[<>:"/\\|?*]/g, '')
+      .replace(/\s+/g, '_')
+      .substring(0, 100);
+  };
+
+  const filename = sanitizeFilename(title || 'video');
+  const isAudio = audio_only === 'true';
+  const ext = isAudio ? 'mp3' : 'mp4';
+
+  // Set response headers for download
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}.${ext}"`);
+  res.setHeader('Content-Type', isAudio ? 'audio/mpeg' : 'video/mp4');
+  res.setHeader('Transfer-Encoding', 'chunked');
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Cache-Control', 'no-cache');
+
+  // Build yt-dlp args for streaming to stdout
+  const YT_DLP_CMD = process.platform === 'win32' ? 'python' : 'yt-dlp';
+  const YT_DLP_ARGS = process.platform === 'win32' ? ['-m', 'yt_dlp'] : [];
+
+  const args = [
+    ...YT_DLP_ARGS,
+    '-o', '-', // Output to stdout
+    '--no-playlist',
+    '--no-warnings',
+    '--retries', '3',
+  ];
+
+  if (isAudio) {
+    args.push('-x');
+    args.push('--audio-format', 'mp3');
+    args.push('--audio-quality', '0');
+  } else if (format_id) {
+    args.push('-f', `${format_id}+bestaudio[ext=m4a]/${format_id}+bestaudio/${format_id}/best`);
+  } else {
+    args.push('-f', 'best[height<=1080]/best');
+  }
+
+  args.push(url);
+
+  console.log(`🎬 [Stream ${streamId}] Command: ${YT_DLP_CMD} ${args.join(' ')}`);
+
+  const { spawn } = require('child_process');
+  const ytdlp = spawn(YT_DLP_CMD, args, { windowsHide: true });
+
+  // Track active stream
+  activeStreams.set(streamId, { process: ytdlp, startedAt: Date.now() });
+
+  let hasError = false;
+  let bytesStreamed = 0;
+
+  ytdlp.stdout.on('data', (chunk) => {
+    if (!res.writableEnded) {
+      res.write(chunk);
+      bytesStreamed += chunk.length;
+    }
+  });
+
+  ytdlp.stderr.on('data', (data) => {
+    const msg = data.toString();
+    // Only log actual errors, not progress
+    if (msg.includes('ERROR') || msg.includes('error')) {
+      console.error(`❌ [Stream ${streamId}] Error: ${msg}`);
+      hasError = true;
+    }
+  });
+
+  ytdlp.on('close', (code) => {
+    activeStreams.delete(streamId);
+
+    if (code === 0) {
+      console.log(`✅ [Stream ${streamId}] Completed. Streamed ${(bytesStreamed / 1024 / 1024).toFixed(2)} MB`);
+    } else if (!hasError) {
+      console.error(`❌ [Stream ${streamId}] Process exited with code ${code}`);
+    }
+
+    if (!res.writableEnded) {
+      res.end();
+    }
+  });
+
+  ytdlp.on('error', (err) => {
+    activeStreams.delete(streamId);
+    console.error(`❌ [Stream ${streamId}] Process error: ${err.message}`);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to start download' });
+    } else if (!res.writableEnded) {
+      res.end();
+    }
+  });
+
+  // Cleanup on client disconnect
+  req.on('close', () => {
+    if (activeStreams.has(streamId)) {
+      console.log(`🛑 [Stream ${streamId}] Client disconnected, killing process`);
+      ytdlp.kill('SIGTERM');
+      activeStreams.delete(streamId);
+    }
+  });
+
+  req.on('aborted', () => {
+    if (activeStreams.has(streamId)) {
+      console.log(`🛑 [Stream ${streamId}] Request aborted, killing process`);
+      ytdlp.kill('SIGTERM');
+      activeStreams.delete(streamId);
+    }
+  });
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

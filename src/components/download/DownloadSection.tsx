@@ -173,49 +173,104 @@ export const DownloadSection = () => {
     const handleDownload = useCallback(async () => {
         if (!url || !mediaInfo) return;
 
+        // Immediately set downloading state to prevent double-clicks
+        setDownloadProgress({
+            id: 'local',
+            status: 'starting',
+            progress: 0,
+            speed: null,
+            eta: null,
+            downloadUrl: null,
+            error: null,
+        });
+
         try {
-            const response = await fetch(`${API_BASE}/api/media/download`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    url: url.trim(),
-                    format_id: audioOnly ? null : selectedFormat,
-                    audio_only: audioOnly,
-                }),
-            });
-
-            const data = await response.json();
-
-            if (!response.ok || !data.success) {
-                throw new Error(data.error || 'Failed to start download');
+            // Build stream URL with query params
+            const streamUrl = new URL(`${API_BASE}/api/media/stream`);
+            streamUrl.searchParams.set('url', url.trim());
+            streamUrl.searchParams.set('title', mediaInfo.metadata.title || 'download');
+            streamUrl.searchParams.set('audio_only', audioOnly.toString());
+            if (!audioOnly && selectedFormat) {
+                streamUrl.searchParams.set('format_id', selectedFormat);
             }
 
-            toast.success('Download started');
+            setDownloadProgress(prev => prev ? { ...prev, status: 'downloading', progress: 10 } : null);
+            toast.info('Starting download...');
 
-            // Start SSE for progress tracking
-            const eventSource = new EventSource(
-                `${API_BASE}/api/media/download/${data.downloadId}/stream`
-            );
+            // Use fetch for streaming download
+            const response = await fetch(streamUrl.toString());
 
-            eventSource.onmessage = (event) => {
-                const progress: DownloadProgress = JSON.parse(event.data);
-                setDownloadProgress(progress);
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ error: 'Download failed' }));
+                throw new Error(error.error || 'Download failed');
+            }
 
-                if (progress.status === 'completed') {
-                    eventSource.close();
-                    toast.success('Download completed!');
-                } else if (progress.status === 'failed') {
-                    eventSource.close();
-                    toast.error(progress.error || 'Download failed');
-                }
-            };
+            setDownloadProgress(prev => prev ? { ...prev, progress: 50 } : null);
 
-            eventSource.onerror = () => {
-                eventSource.close();
-            };
+            // Get filename from Content-Disposition header
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let filename = audioOnly ? 'audio.mp3' : 'video.mp4';
+            if (contentDisposition) {
+                const match = contentDisposition.match(/filename="(.+)"/);
+                if (match) filename = match[1];
+            }
+
+            // Convert response to blob
+            const blob = await response.blob();
+
+            setDownloadProgress(prev => prev ? { ...prev, progress: 90 } : null);
+
+            // Create download link
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = filename;
+
+            // iOS Safari handling
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+            if (isIOS) {
+                // For iOS, open in new tab for better handling
+                window.open(downloadUrl, '_blank');
+            } else {
+                // Standard download for other browsers
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+
+            // Cleanup blob URL after a delay
+            setTimeout(() => window.URL.revokeObjectURL(downloadUrl), 10000);
+
+            setDownloadProgress({
+                id: 'local',
+                status: 'completed',
+                progress: 100,
+                speed: null,
+                eta: null,
+                downloadUrl: null,
+                error: null,
+            });
+
+            toast.success('Download started in your browser!');
+
+            // Reset after 3 seconds
+            setTimeout(() => setDownloadProgress(null), 3000);
+
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'Failed to start download';
+            const message = err instanceof Error ? err.message : 'Download failed';
+            setDownloadProgress({
+                id: 'local',
+                status: 'failed',
+                progress: 0,
+                speed: null,
+                eta: null,
+                downloadUrl: null,
+                error: message,
+            });
             toast.error(message);
+
+            // Reset after 5 seconds
+            setTimeout(() => setDownloadProgress(null), 5000);
         }
     }, [url, mediaInfo, selectedFormat, audioOnly]);
 
@@ -505,45 +560,96 @@ export const DownloadSection = () => {
                                     </Button>
                                 ) : (
                                     <div className="space-y-3">
+                                        {/* Status Header */}
                                         <div className="flex items-center justify-between text-sm">
-                                            <span className="font-medium capitalize">{downloadProgress.status}</span>
-                                            <span>{Math.round(downloadProgress.progress)}%</span>
+                                            <span className="font-medium flex items-center gap-2">
+                                                {downloadProgress.status === 'starting' && (
+                                                    <>
+                                                        <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                                                        <span className="text-blue-500">Preparing download...</span>
+                                                    </>
+                                                )}
+                                                {downloadProgress.status === 'downloading' && (
+                                                    <>
+                                                        <Download className="h-4 w-4 animate-pulse text-green-500" />
+                                                        <span className="text-green-500">Downloading...</span>
+                                                    </>
+                                                )}
+                                                {downloadProgress.status === 'merging' && (
+                                                    <>
+                                                        <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
+                                                        <span className="text-orange-500">Processing...</span>
+                                                    </>
+                                                )}
+                                                {downloadProgress.status === 'completed' && (
+                                                    <>
+                                                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                                        <span className="text-green-600">Download Complete!</span>
+                                                    </>
+                                                )}
+                                                {downloadProgress.status === 'failed' && (
+                                                    <>
+                                                        <AlertCircle className="h-4 w-4 text-red-500" />
+                                                        <span className="text-red-500">Download Failed</span>
+                                                    </>
+                                                )}
+                                            </span>
+                                            <span className="font-bold">{Math.round(downloadProgress.progress)}%</span>
                                         </div>
-                                        <Progress value={downloadProgress.progress} className="h-3" />
+
+                                        {/* Progress Bar */}
+                                        <Progress
+                                            value={downloadProgress.progress}
+                                            className={`h-3 ${downloadProgress.status === 'completed' ? 'bg-green-100' :
+                                                    downloadProgress.status === 'failed' ? 'bg-red-100' : ''
+                                                }`}
+                                        />
+
+                                        {/* Speed & ETA */}
                                         <div className="flex justify-between text-xs text-muted-foreground">
-                                            {downloadProgress.speed && <span>{downloadProgress.speed}</span>}
+                                            {downloadProgress.speed && <span>Speed: {downloadProgress.speed}</span>}
                                             {downloadProgress.eta && <span>ETA: {downloadProgress.eta}</span>}
                                         </div>
 
-                                        {downloadProgress.status === 'completed' && downloadProgress.downloadUrl && (
-                                            <Button
-                                                asChild
-                                                className="w-full bg-green-600 hover:bg-green-700"
-                                            >
-                                                <a
-                                                    href={`${API_BASE}${downloadProgress.downloadUrl}`}
-                                                    download
-                                                >
-                                                    <CheckCircle2 className="mr-2 h-4 w-4" />
-                                                    Save File
-                                                </a>
-                                            </Button>
-                                        )}
-
-                                        {downloadProgress.status === 'failed' && (
-                                            <div className="text-center text-destructive text-sm">
-                                                {downloadProgress.error || 'Download failed'}
+                                        {/* Completed Message */}
+                                        {downloadProgress.status === 'completed' && (
+                                            <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-center">
+                                                <p className="text-green-700 font-medium">
+                                                    ✅ Your file is downloading in your browser!
+                                                </p>
+                                                <p className="text-green-600 text-xs mt-1">
+                                                    Check your Downloads folder
+                                                </p>
                                             </div>
                                         )}
 
+                                        {/* Error Message */}
+                                        {downloadProgress.status === 'failed' && downloadProgress.error && (
+                                            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-center">
+                                                <p className="text-red-600 text-sm">
+                                                    {downloadProgress.error}
+                                                </p>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setDownloadProgress(null)}
+                                                    className="mt-2"
+                                                >
+                                                    Try Again
+                                                </Button>
+                                            </div>
+                                        )}
+
+                                        {/* Cancel Button (only during active download) */}
                                         {['starting', 'downloading', 'merging'].includes(downloadProgress.status) && (
                                             <Button
                                                 variant="outline"
-                                                onClick={handleCancelDownload}
+                                                onClick={() => setDownloadProgress(null)}
                                                 className="w-full"
+                                                disabled
                                             >
-                                                <X className="mr-2 h-4 w-4" />
-                                                Cancel Download
+                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                Please wait...
                                             </Button>
                                         )}
                                     </div>
