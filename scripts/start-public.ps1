@@ -50,7 +50,7 @@ function Update-Dependencies {
     
     Write-Step "1.2" "Updating Frontend packages..."
     try {
-        Push-Location $PSScriptRoot
+        Push-Location "$PSScriptRoot\.."
         $null = npm install 2>&1
         Write-Success "Frontend packages updated"
         Pop-Location
@@ -62,7 +62,7 @@ function Update-Dependencies {
     
     Write-Step "1.3" "Updating Backend packages..."
     try {
-        Push-Location "$PSScriptRoot\backend"
+        Push-Location "$PSScriptRoot\..\backend"
         $null = npm install 2>&1
         Write-Success "Backend packages updated"
         Pop-Location
@@ -94,7 +94,7 @@ function Start-BackendServer {
     Write-Host ""
     
     Write-Step "3.1" "Starting Backend on port 3001..."
-    $backendPath = "$PSScriptRoot\backend"
+    $backendPath = "$PSScriptRoot\..\backend"
     
     # Start in a new window so we can see output
     $proc = Start-Process -FilePath "cmd" -ArgumentList "/c", "cd /d `"$backendPath`" && npm start" -PassThru -WindowStyle Minimized
@@ -135,7 +135,7 @@ function Start-FrontendServer {
     Write-Step "4.1" "Starting Vite on port 8080..."
     
     # Start in a new window
-    $proc = Start-Process -FilePath "cmd" -ArgumentList "/c", "cd /d `"$PSScriptRoot`" && npm run dev" -PassThru -WindowStyle Minimized
+    $proc = Start-Process -FilePath "cmd" -ArgumentList "/c", "cd /d `"$PSScriptRoot\..`" && npm run dev" -PassThru -WindowStyle Minimized
     $Script:ProcessIds += $proc.Id
     
     Write-Step "4.2" "Waiting for Frontend (up to 30 seconds)..."
@@ -229,7 +229,7 @@ function Start-CloudflareTunnels {
         
         # Inject config into public/api-config.js
         Write-Step "5.5" "Injecting API configuration..."
-        $configPath = "$PSScriptRoot\public\api-config.js"
+        $configPath = "$PSScriptRoot\..\public\api-config.js"
         $timestamp = [DateTimeOffset]::Now.ToUnixTimeMilliseconds()
         $configContent = @"
 /**
