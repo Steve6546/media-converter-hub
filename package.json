@@ -1,15 +1,36 @@
 {
-  "name": "vite_react_shadcn_ts",
-  "private": true,
-  "version": "0.0.0",
+  "name": "smart-media-converter",
+  "version": "1.0.0",
+  "description": "Download, convert, and process media from 100+ platforms",
   "type": "module",
+  "author": "Smart Media Converter Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/smart-media-converter.git"
+  },
+  "keywords": [
+    "media-converter",
+    "video-downloader",
+    "youtube-downloader",
+    "tiktok-downloader",
+    "mp3-converter",
+    "ffmpeg",
+    "yt-dlp"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start:all": "powershell -ExecutionPolicy Bypass -File ./start.ps1"
+    "start:local": "powershell -ExecutionPolicy Bypass -File ./scripts/start-local.ps1",
+    "start:public": "powershell -ExecutionPolicy Bypass -File ./scripts/start-public.ps1",
+    "start:all": "powershell -ExecutionPolicy Bypass -File ./scripts/start-public.ps1",
+    "stop": "powershell -ExecutionPolicy Bypass -File ./scripts/stop.ps1",
+    "health": "powershell -ExecutionPolicy Bypass -File ./scripts/health.ps1",
+    "update": "powershell -ExecutionPolicy Bypass -File ./scripts/update.ps1",
+    "security:audit": "npm audit && cd backend && npm audit"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

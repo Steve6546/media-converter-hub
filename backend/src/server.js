@@ -83,9 +83,22 @@ const COVERS_DIR = path.join(__dirname, '../covers');
 
 ensureStudioDirs();
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// Import security middleware
+const {
+  helmetConfig,
+  corsOptions,
+  generalLimiter,
+  sanitizeRequest,
+  securityLogger,
+} = require('./middleware/security');
+
+// Security Middleware
+app.use(helmetConfig); // Security headers
+app.use(cors(corsOptions)); // Configured CORS (not open to all)
+app.use(express.json({ limit: '10mb' })); // JSON with size limit
+app.use(sanitizeRequest); // Sanitize requests
+app.use(securityLogger); // Log suspicious requests
+app.use(generalLimiter); // Rate limiting
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -97,6 +110,7 @@ app.use('/output', express.static(OUTPUT_DIR));
 app.use('/covers', express.static(COVERS_DIR));
 app.use('/studio-output', express.static(STUDIO_OUTPUT_DIR));
 app.use('/media-downloads', express.static(MEDIA_OUTPUT_DIR));
+
 
 // Multer config for video uploads
 const videoStorage = multer.diskStorage({
