@@ -214,18 +214,22 @@ export const DownloadSection = () => {
 
                 if (progress.status === 'completed' && progress.downloadUrl) {
                     eventSource.close();
-                    toast.success('Download ready!');
+                    toast.success('Download complete! File saved to your Downloads folder.');
 
-                    // Auto-download the file
-                    const link = document.createElement('a');
-                    link.href = `${API_BASE}${progress.downloadUrl}`;
-                    link.download = '';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
+                    // Silent background download using hidden iframe
+                    // This prevents video from opening in browser
+                    const iframe = document.createElement('iframe');
+                    iframe.style.display = 'none';
+                    iframe.src = `${API_BASE}${progress.downloadUrl}`;
+                    document.body.appendChild(iframe);
 
-                    // Reset after delay
-                    setTimeout(() => setDownloadProgress(null), 5000);
+                    // Cleanup iframe after download starts
+                    setTimeout(() => {
+                        document.body.removeChild(iframe);
+                    }, 5000);
+
+                    // Reset UI after delay
+                    setTimeout(() => setDownloadProgress(null), 3000);
                 } else if (progress.status === 'failed') {
                     eventSource.close();
                     toast.error(progress.error || 'Download failed');

@@ -109,7 +109,14 @@ app.use((req, res, next) => {
 app.use('/output', express.static(OUTPUT_DIR));
 app.use('/covers', express.static(COVERS_DIR));
 app.use('/studio-output', express.static(STUDIO_OUTPUT_DIR));
-app.use('/media-downloads', express.static(MEDIA_OUTPUT_DIR));
+
+// Force download for media files (prevents browser from playing them)
+app.use('/media-downloads', (req, res, next) => {
+  const filename = path.basename(req.path);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Type', 'application/octet-stream');
+  next();
+}, express.static(MEDIA_OUTPUT_DIR));
 
 
 // Multer config for video uploads
