@@ -545,9 +545,14 @@ const analyzeUrl = async (url) => {
                     platform: platform.name,
                     platformIcon: platform.icon,
                     platformColor: platform.color,
-                    uploader: info.uploader || info.channel || null,
+                    uploader: info.uploader || info.channel || info.creator || null,
                     uploader_url: info.uploader_url || info.channel_url || null,
-                    thumbnail: info.thumbnail || null,
+                    // Multiple fallback sources for thumbnail (especially for Instagram)
+                    thumbnail: info.thumbnail ||
+                        info.thumbnails?.[0]?.url ||
+                        info.thumbnails?.[info.thumbnails.length - 1]?.url ||
+                        (info.formats?.find(f => f.vcodec !== 'none')?.url) ||
+                        null,
                     duration: info.duration || null,
                     duration_string: info.duration_string || null,
                     view_count: info.view_count || null,
