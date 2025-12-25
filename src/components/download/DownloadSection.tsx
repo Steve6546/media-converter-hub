@@ -175,7 +175,7 @@ export const DownloadSection = () => {
 
         // Immediately set downloading state to prevent double-clicks
         setDownloadProgress({
-            id: 'local',
+            id: 'pending',
             status: 'starting',
             progress: 0,
             speed: null,
@@ -185,81 +185,67 @@ export const DownloadSection = () => {
         });
 
         try {
-            // Build stream URL with query params
-            const streamUrl = new URL(`${API_BASE}/api/media/stream`);
-            streamUrl.searchParams.set('url', url.trim());
-            streamUrl.searchParams.set('title', mediaInfo.metadata.title || 'download');
-            streamUrl.searchParams.set('audio_only', audioOnly.toString());
-            if (!audioOnly && selectedFormat) {
-                streamUrl.searchParams.set('format_id', selectedFormat);
-            }
-
-            setDownloadProgress(prev => prev ? { ...prev, status: 'downloading', progress: 10 } : null);
-            toast.info('Starting download...');
-
-            // Use fetch for streaming download
-            const response = await fetch(streamUrl.toString());
-
-            if (!response.ok) {
-                const error = await response.json().catch(() => ({ error: 'Download failed' }));
-                throw new Error(error.error || 'Download failed');
-            }
-
-            setDownloadProgress(prev => prev ? { ...prev, progress: 50 } : null);
-
-            // Get filename from Content-Disposition header
-            const contentDisposition = response.headers.get('Content-Disposition');
-            let filename = audioOnly ? 'audio.mp3' : 'video.mp4';
-            if (contentDisposition) {
-                const match = contentDisposition.match(/filename="(.+)"/);
-                if (match) filename = match[1];
-            }
-
-            // Convert response to blob
-            const blob = await response.blob();
-
-            setDownloadProgress(prev => prev ? { ...prev, progress: 90 } : null);
-
-            // Create download link
-            const downloadUrl = window.URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = downloadUrl;
-            link.download = filename;
-
-            // iOS Safari handling
-            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-            if (isIOS) {
-                // For iOS, open in new tab for better handling
-                window.open(downloadUrl, '_blank');
-            } else {
-                // Standard download for other browsers
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            }
-
-            // Cleanup blob URL after a delay
-            setTimeout(() => window.URL.revokeObjectURL(downloadUrl), 10000);
-
-            setDownloadProgress({
-                id: 'local',
-                status: 'completed',
-                progress: 100,
-                speed: null,
-                eta: null,
-                downloadUrl: null,
-                error: null,
+            const response = await fetch(`${API_BASE}/api/media/download`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    url: url.trim(),
+                    format_id: audioOnly ? null : selectedFormat,
+                    audio_only: audioOnly,
+                }),
             });
 
-            toast.success('Download started in your browser!');
+            const data = await response.json();
 
-            // Reset after 3 seconds
-            setTimeout(() => setDownloadProgress(null), 3000);
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || 'Failed to start download');
+            }
+
+            toast.info('Download started...');
+
+            // Start SSE for progress tracking
+            const eventSource = new EventSource(
+                `${API_BASE}/api/media/download/${data.downloadId}/stream`
+            );
+
+            eventSource.onmessage = (event) => {
+                const progress: DownloadProgress = JSON.parse(event.data);
+                setDownloadProgress(progress);
+
+                if (progress.status === 'completed' && progress.downloadUrl) {
+                    eventSource.close();
+                    toast.success('Download ready!');
+
+                    // Auto-download the file
+                    const link = document.createElement('a');
+                    link.href = `${API_BASE}${progress.downloadUrl}`;
+                    link.download = '';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+
+                    // Reset after delay
+                    setTimeout(() => setDownloadProgress(null), 5000);
+                } else if (progress.status === 'failed') {
+                    eventSource.close();
+                    toast.error(progress.error || 'Download failed');
+                    setTimeout(() => setDownloadProgress(null), 5000);
+                }
+            };
+
+            eventSource.onerror = () => {
+                eventSource.close();
+                setDownloadProgress(prev => prev ? {
+                    ...prev,
+                    status: 'failed',
+                    error: 'Connection lost'
+                } : null);
+            };
 
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Download failed';
             setDownloadProgress({
-                id: 'local',
+                id: 'error',
                 status: 'failed',
                 progress: 0,
                 speed: null,
@@ -268,8 +254,6 @@ export const DownloadSection = () => {
                 error: message,
             });
             toast.error(message);
-
-            // Reset after 5 seconds
             setTimeout(() => setDownloadProgress(null), 5000);
         }
     }, [url, mediaInfo, selectedFormat, audioOnly]);
@@ -601,7 +585,7 @@ export const DownloadSection = () => {
                                         <Progress
                                             value={downloadProgress.progress}
                                             className={`h-3 ${downloadProgress.status === 'completed' ? 'bg-green-100' :
-                                                    downloadProgress.status === 'failed' ? 'bg-red-100' : ''
+                                                downloadProgress.status === 'failed' ? 'bg-red-100' : ''
                                                 }`}
                                         />
 
