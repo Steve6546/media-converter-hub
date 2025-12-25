@@ -80,10 +80,21 @@ function Stop-ExistingProcesses {
     Write-Host "  === Step 2: Cleaning Up ===" -ForegroundColor Cyan
     Write-Host ""
     
-    Write-Step "2.1" "Stopping existing processes..."
-    taskkill /F /IM node.exe 2>$null | Out-Null
-    taskkill /F /IM cloudflared.exe 2>$null | Out-Null
-    Start-Sleep -Seconds 3
+    Write-Step "2.1" "Stopping existing processes (if any)..."
+    try {
+        # Redirect error to null and continue on error to prevent script failure if no processes exist
+        Stop-Process -Name "node" -ErrorAction SilentlyContinue -Force
+        Stop-Process -Name "cloudflared" -ErrorAction SilentlyContinue -Force
+        
+        # Also try taskkill as a fallback
+        taskkill /F /IM node.exe /T 2>$null | Out-Null
+        taskkill /F /IM cloudflared.exe /T 2>$null | Out-Null
+    }
+    catch {
+        # Silently ignore errors
+    }
+    
+    Start-Sleep -Seconds 2
     Write-Success "Cleanup complete"
     Write-Host ""
 }

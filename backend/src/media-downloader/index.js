@@ -10,6 +10,33 @@ const fs = require('fs');
 const https = require('https');
 const http = require('http');
 const { v4: uuidv4 } = require('uuid');
+const ffmpegSrc = require('ffmpeg-static');
+const ffprobeSrc = require('ffprobe-static').path;
+
+// Setup binaries directory
+const BIN_DIR = path.join(__dirname, '../../bin');
+
+// Ensure bin directory exists and has binaries
+try {
+    if (!fs.existsSync(BIN_DIR)) {
+        fs.mkdirSync(BIN_DIR, { recursive: true });
+    }
+
+    // Copy binaries if not present
+    const ffmpegDest = path.join(BIN_DIR, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+    const ffprobeDest = path.join(BIN_DIR, process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
+
+    if (!fs.existsSync(ffmpegDest) && ffmpegSrc) {
+        fs.copyFileSync(ffmpegSrc, ffmpegDest);
+        console.log(`[Setup] Copied ffmpeg to ${ffmpegDest}`);
+    }
+    if (!fs.existsSync(ffprobeDest) && ffprobeSrc) {
+        fs.copyFileSync(ffprobeSrc, ffprobeDest);
+        console.log(`[Setup] Copied ffprobe to ${ffprobeDest}`);
+    }
+} catch (e) {
+    console.error('[Setup] Failed to setup binaries:', e);
+}
 
 // Directory for media downloads
 const MEDIA_OUTPUT_DIR = path.join(__dirname, '../../media-downloads');
@@ -449,23 +476,7 @@ const parseFormats = (formats) => {
  */
 const getTikTokArgs = () => {
     return [
-        // Try browser impersonation (requires curl_cffi)
-        '--impersonate', 'chrome',
-        // Fallback user agent if impersonation not available
-        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        // Add referer header
         '--referer', 'https://www.tiktok.com/',
-        // Add custom headers to look more like a real browser
-        '--add-header', 'Accept:text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        '--add-header', 'Accept-Language:en-US,en;q=0.9',
-        '--add-header', 'sec-ch-ua:"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-        '--add-header', 'sec-ch-ua-mobile:?0',
-        '--add-header', 'sec-ch-ua-platform:"Windows"',
-        '--add-header', 'sec-fetch-dest:document',
-        '--add-header', 'sec-fetch-mode:navigate',
-        '--add-header', 'sec-fetch-site:none',
-        '--add-header', 'sec-fetch-user:?1',
-        '--add-header', 'upgrade-insecure-requests:1',
     ];
 };
 
@@ -731,6 +742,7 @@ const downloadMedia = (url, formatId, options = {}) => {
     const isTikTok = platform.name === 'TikTok';
 
     const args = [
+        '--ffmpeg-location', BIN_DIR,
         '--newline', // Progress on new lines
         '-o', outputTemplate,
         '--no-playlist',
@@ -743,6 +755,9 @@ const downloadMedia = (url, formatId, options = {}) => {
     }
 
     if (audioOnly) {
+        if (formatId) {
+            args.push('-f', formatId);
+        }
         args.push('-x'); // Extract audio
         args.push('--audio-format', 'mp3');
         args.push('--audio-quality', '0'); // Best quality

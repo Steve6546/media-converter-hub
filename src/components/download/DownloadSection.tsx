@@ -116,6 +116,7 @@ export const DownloadSection = () => {
     const [mediaInfo, setMediaInfo] = useState<AnalyzeResponse | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [selectedFormat, setSelectedFormat] = useState<string | null>(null);
+    const [selectedAudioFormat, setSelectedAudioFormat] = useState<string | null>(null);
     const [audioOnly, setAudioOnly] = useState(false);
     const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
 
@@ -190,7 +191,7 @@ export const DownloadSection = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     url: url.trim(),
-                    format_id: audioOnly ? null : selectedFormat,
+                    format_id: audioOnly ? selectedAudioFormat : selectedFormat,
                     audio_only: audioOnly,
                 }),
             });
@@ -214,22 +215,17 @@ export const DownloadSection = () => {
 
                 if (progress.status === 'completed' && progress.downloadUrl) {
                     eventSource.close();
-                    toast.success('Download complete! File saved to your Downloads folder.');
+                    toast.success('Download ready!');
 
-                    // Silent background download using hidden iframe
-                    // This prevents video from opening in browser
-                    const iframe = document.createElement('iframe');
-                    iframe.style.display = 'none';
-                    iframe.src = `${API_BASE}${progress.downloadUrl}`;
-                    document.body.appendChild(iframe);
+                    // Auto-download using anchor tag (more reliable than iframe)
+                    const link = document.createElement('a');
+                    link.href = `${API_BASE}${progress.downloadUrl}`;
+                    link.setAttribute('download', '');
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
 
-                    // Cleanup iframe after download starts
-                    setTimeout(() => {
-                        document.body.removeChild(iframe);
-                    }, 5000);
-
-                    // Reset UI after delay
-                    setTimeout(() => setDownloadProgress(null), 3000);
+                    // Kept visible so user can click "Save File" manually
                 } else if (progress.status === 'failed') {
                     eventSource.close();
                     toast.error(progress.error || 'Download failed');
@@ -511,20 +507,29 @@ export const DownloadSection = () => {
                                                 mediaInfo.download_options.audio.map((format) => (
                                                     <div
                                                         key={format.format_id}
-                                                        className="flex items-center justify-between p-3 rounded-lg border border-border"
+                                                        className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all ${selectedAudioFormat === format.format_id
+                                                            ? 'border-primary bg-primary/5'
+                                                            : 'border-border hover:border-primary/50'
+                                                            }`}
+                                                        onClick={() => setSelectedAudioFormat(format.format_id)}
                                                     >
                                                         <div className="flex items-center gap-3">
                                                             <FileAudio className="h-5 w-5 text-muted-foreground" />
                                                             <div>
                                                                 <div className="font-medium">{format.quality}</div>
                                                                 <div className="text-xs text-muted-foreground">
-                                                                    {format.ext.toUpperCase()}
+                                                                    {format.abr ? `${format.abr} kbps • ` : ''}{format.ext.toUpperCase()}
                                                                 </div>
                                                             </div>
                                                         </div>
-                                                        {format.size_mb && (
-                                                            <Badge variant="outline">{format.size_mb} MB</Badge>
-                                                        )}
+                                                        <div className="flex items-center gap-2">
+                                                            {format.size_mb && (
+                                                                <Badge variant="outline">{format.size_mb} MB</Badge>
+                                                            )}
+                                                            {selectedAudioFormat === format.format_id && (
+                                                                <CheckCircle2 className="h-5 w-5 text-primary" />
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 ))
                                             ) : (
@@ -541,7 +546,7 @@ export const DownloadSection = () => {
                                     <Button
                                         onClick={handleDownload}
                                         className="w-full h-12 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700"
-                                        disabled={!audioOnly && !selectedFormat}
+                                        disabled={(!audioOnly && !selectedFormat) || (audioOnly && !selectedAudioFormat)}
                                     >
                                         <Download className="mr-2 h-5 w-5" />
                                         {audioOnly ? 'Download Audio (MP3)' : 'Download Video'}

@@ -29,6 +29,7 @@ const {
 
 
 const app = express();
+app.set('trust proxy', 1); // Trust first proxy (Cloudflare) for rate limiting
 const PORT = process.env.PORT || 3001;
 const ffmpegPath = process.env.FFMPEG_PATH || ffmpegStatic;
 const ffprobePath = process.env.FFPROBE_PATH || (ffprobeStatic && ffprobeStatic.path);
@@ -100,6 +101,11 @@ app.use(sanitizeRequest); // Sanitize requests
 app.use(securityLogger); // Log suspicious requests
 app.use(generalLimiter); // Rate limiting
 
+// Health check endpoint (for startup scripts)
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: Date.now() });
+});
+
 // Request logging middleware
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
@@ -111,12 +117,20 @@ app.use('/covers', express.static(COVERS_DIR));
 app.use('/studio-output', express.static(STUDIO_OUTPUT_DIR));
 
 // Force download for media files (prevents browser from playing them)
-app.use('/media-downloads', (req, res, next) => {
-  const filename = path.basename(req.path);
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  res.setHeader('Content-Type', 'application/octet-stream');
-  next();
-}, express.static(MEDIA_OUTPUT_DIR));
+// Robust file download handler
+app.get('/media-downloads/:filename', (req, res) => {
+  const filename = req.params.filename;
+  if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+    return res.status(400).send('Invalid filename');
+  }
+  const filePath = path.join(MEDIA_OUTPUT_DIR, filename);
+  res.download(filePath, filename, (err) => {
+    if (err) {
+      console.error(`[Download Error] ${filename}:`, err.message);
+      if (!res.headersSent) res.status(404).send('File not found');
+    }
+  });
+});
 
 
 // Multer config for video uploads
@@ -890,7 +904,10 @@ app.post('/api/media/download', async (req, res) => {
     });
 
     process.stderr.on('data', (data) => {
-      console.error(`[yt-dlp stderr] ${data.toString()}`);
+      const msg = data.toString();
+      console.error(`[yt-dlp stderr] ${msg}`);
+      // Accumulate error messages, but limit size
+      download.lastDebugError = (download.lastDebugError || '') + msg;
     });
 
     process.on('close', (code) => {
@@ -917,12 +934,19 @@ app.post('/api/media/download', async (req, res) => {
           download.completedAt = Date.now();
           console.log(`✅ [/api/media/download] Completed: ${downloadId}`);
         } else {
+          const cleanError = (download.lastDebugError || '')
+            .replace(/\[debug\] /g, '')
+            .split('\n')
+            .filter(line => line.includes('ERROR') || line.trim().length > 0)
+            .slice(-3)
+            .join(' ');
+
           download.status = 'failed';
-          download.error = `Download failed with exit code ${code}`;
+          download.error = `Download failed: ${cleanError || 'Unknown error code ' + code}`;
           console.error(`❌ [/api/media/download] Failed: ${downloadId}`);
         }
-        activeMediaDownloads.set(downloadId, download);
       }
+      activeMediaDownloads.set(downloadId, download);
     });
 
     process.on('error', (err) => {
